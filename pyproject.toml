@@ -1,0 +1,30 @@
+[project]
+name = "ai-money-agent"
+version = "0.1.0"
+description = "AI Money Agent - 基于 nof1.ai 的加密货币交易 Agent"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ccxt>=4.0.0",
+    "python-dotenv>=1.0.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langgraph>=0.2.60",
+    "langchain-core>=0.3.30",
+    "pandas>=2.0.0",
+    "pydantic>=2.10.0",
+    "requests>=2.31.0",
+    "openai>=1.0.0",
+    "langchain-deepseek>=1.0.0",
+    "langfuse>=2.0.0",
+    "typing-extensions>=4.12.0",
+    "typing-inspect>=0.9.0",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "websockets>=12.0",
+    "vectorbt>=0.28.1",
+]
+
+[[tool.uv.index]]
+url = "https://mirrors.cloud.tencent.com/pypi/simple/"
+default = true
