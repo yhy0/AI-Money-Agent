@@ -309,10 +309,10 @@ def format_positions(positions: List[Dict[str, Any]], trade_history: List[Dict[s
         
         # 🔥 显示交易所实际的止盈止损（如果有）
         if stop_loss_price > 0 or take_profit_price > 0:
-            output += "    'exchange_sl_tp': {\\n"
-            output += f"      'stop_loss_price': {stop_loss_price:.6f},  # 交易所实际设置\\n"
-            output += f"      'take_profit': {take_profit_price:.6f}  # 交易所实际设置\\n"
-            output += "    },\\n"
+            output += "    'exchange_sl_tp': {\n"
+            output += f"   'stop_loss_price': {stop_loss_price:.6f},\n"
+            output += f"    'take_profit': {take_profit_price:.6f}\n"
+            output += "    },\n"
         
         # 添加 exit_plan（从交易历史恢复或使用默认值）
         exit_plan = exit_plans.get(coin, {

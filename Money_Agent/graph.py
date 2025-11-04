@@ -10,11 +10,14 @@ from Money_Agent.tools.exchange_data_tool import (
     execute_trade_order,
     set_stop_loss_take_profit
 )
-from Money_Agent.config import MIN_EQUITY_FOR_MULTI_ASSET, exchange
+from Money_Agent.config import MIN_EQUITY_FOR_MULTI_ASSET
+from Money_Agent.tools.exchange import exchange
 from Money_Agent.model import create_structured_model
 from Money_Agent.schemas import TradingDecision
 from common.log_handler import logger, log_agent_thought, log_state_update, log_system_event, log_security_event
 from Money_Agent.utils.prompt_formatter import format_positions
+from Money_Agent.utils.market_regime import calculate_market_regime
+from Money_Agent.utils.trend_validation import validate_trend_consistency
 import json
 
 
@@ -90,6 +93,9 @@ def get_agent_decision(state: AgentState):
         historical_analysis_data = state.get('historical_analysis', {})
         historical_analysis_json_string = json.dumps(historical_analysis_data, indent=2, ensure_ascii=False)
         
+        # 计算市场状态
+        market_regime = calculate_market_regime(state.get("structured_market_data", {}))
+        
         formatted_prompt = prompt.format(
             minutes_elapsed=state["minutes_elapsed"],
             market_data=state["market_data"],
@@ -98,7 +104,8 @@ def get_agent_decision(state: AgentState):
             cash_available=account_info.get("cash_available", 10000),
             account_value=account_info.get("account_value", 10000),
             positions_formatted=positions_formatted,
-            historical_analysis_json=historical_analysis_json_string # 注入历史分析数据
+            historical_analysis_json=historical_analysis_json_string, # 注入历史分析数据
+            market_regime=market_regime  # 注入市场状态
         )
         
         # 🔥 记录 LLM 输入（简化版，避免过长）

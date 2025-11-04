@@ -1,6 +1,7 @@
 """
 AI Money Agent 的完整工作流定义
 """
+import asyncio
 from langgraph.graph import StateGraph, END
 from langfuse.langchain import CallbackHandler
 from Money_Agent.state import AgentState
@@ -8,7 +9,7 @@ from Money_Agent.graph import (
     get_agent_decision,
     execute_trade,
 )
-
+from Money_Agent.tools.exchange import exchange
 from Money_Agent.utils.market import update_market_data
 from Money_Agent.utils.performance import calculate_performance_metrics
 # 新增导入
@@ -17,15 +18,11 @@ from Money_Agent.database import get_database
 from common.log_handler import logger, log_system_event
 
 # --- 新增节点函数 ---
-async def update_historical_analysis(state: AgentState) -> AgentState:
-    """获取历史交易分析并更新状态"""
+def update_historical_analysis(state: AgentState) -> AgentState:
+    """获取历史交易分析并更新状态（同步包装）"""
     logger.info("📥 正在更新历史交易分析...")
-    # 这个函数需要 exchange 实例，我们假设它在 state['account_info'] 中可用
-    # 或者需要从别处获取。这里我们假设 get_exchange() 可以工作。
-    from Money_Agent.tools.exchange_data_tool import get_exchange
-    exchange = get_exchange()
-
-    analysis_data = await generate_llm_data(exchange)
+    # 使用 asyncio.run 在同步函数中调用异步函数
+    analysis_data = asyncio.run(generate_llm_data(exchange))
     state['historical_analysis'] = analysis_data
     logger.info("✅ 历史交易分析更新完毕")
     return state

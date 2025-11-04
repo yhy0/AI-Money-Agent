@@ -24,7 +24,7 @@ def _process_positions_data(positions: List[Dict[str, Any]]) -> List[Dict[str, A
             continue
 
         position_side = info.get('holdSide', '')
-        position_type = '开多' if position_side == 'long' else '开空'
+        position_type = 'buy_to_enter(开多)' if position_side == 'long' else 'sell_to_enter(开空)'
 
         entry_price = float(info.get('openAvgPrice', 0))
         total_size = float(info.get('openTotalPos', 0))
