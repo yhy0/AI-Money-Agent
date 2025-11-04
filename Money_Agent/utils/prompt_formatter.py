@@ -381,3 +381,112 @@ def validate_dataframe_indicators(df: pd.DataFrame, required_columns: List[str])
     if missing:
         raise ValueError(f"DataFrame 缺少必需的指标列: {missing}")
     return True
+
+
+def _format_single_coin(coin: str, coin_data: Dict[str, Any]) -> str:
+    """
+    格式化单个币种的数据（提取公共逻辑）
+    
+    Args:
+        coin: 币种名称
+        coin_data: 币种的结构化数据
+    
+    Returns:
+        格式化后的字符串，如果数据无效则返回空字符串
+    """
+    if not coin_data or not coin_data.get('success'):
+        return ""
+    
+    return format_coin_data(
+        coin=coin,
+        ticker=coin_data.get('ticker'),
+        df_3m=coin_data.get('df_3m'),
+        df_4h=coin_data.get('df_4h'),
+        funding_rate=coin_data.get('funding_rate'),
+        open_interest=coin_data.get('open_interest')
+    )
+
+
+def format_market_data_with_priority(
+    structured_market_data: Dict[str, Any],
+    active_trading_coins: List[str],
+    all_coins: List[str]
+) -> str:
+    """
+    根据优先级格式化市场数据（直接使用结构化数据，更可靠）
+    将可交易币种放在最前面并突出显示，其他币种标注为参考
+    
+    Args:
+        structured_market_data: 结构化的市场数据字典 {coin: {ticker, df_3m, df_4h, ...}}
+        active_trading_coins: 当前允许交易的币种列表（如 ['DOGE']）
+        all_coins: 所有币种列表（用于保持顺序）
+    
+    Returns:
+        格式化的市场数据字符串
+        
+    Example:
+        >>> data = {'DOGE': {...}, 'BTC': {...}}
+        >>> result = format_market_data_with_priority(data, ['DOGE'], ['DOGE', 'BTC'])
+        >>> # DOGE 数据会在前面突出显示，BTC 标注为参考
+    """
+    from common.log_handler import logger
+    
+    # 数据验证
+    if not structured_market_data:
+        logger.warning("⚠️ 结构化市场数据为空")
+        return ""
+    
+    # 如果没有交易限制，使用默认格式（所有币种平等展示）
+    if not active_trading_coins:
+        output = ""
+        for coin in all_coins:
+            output += _format_single_coin(coin, structured_market_data.get(coin))
+        return output
+    
+    # 验证可交易币种的数据是否存在
+    missing_coins = [c for c in active_trading_coins 
+                     if c not in structured_market_data or 
+                     not structured_market_data[c].get('success')]
+    if missing_coins:
+        logger.warning(f"⚠️ 可交易币种数据缺失或获取失败: {missing_coins}")
+    
+    output = ""
+    
+    # 1. 首先输出可交易币种（突出显示）
+    output += "=" * 80 + "\n"
+    output += "🎯 **可交易标的 - 重点分析**\n"
+    output += "=" * 80 + "\n"
+    output += f"以下币种是当前**唯一可交易**的标的，请重点分析其技术形态和交易机会。\n\n"
+    
+    tradable_count = 0
+    for coin in active_trading_coins:
+        coin_output = _format_single_coin(coin, structured_market_data.get(coin))
+        if coin_output:
+            output += coin_output
+            tradable_count += 1
+    
+    if tradable_count == 0:
+        logger.error("❌ 所有可交易币种的数据都获取失败！")
+        output += "⚠️ 数据获取失败，无法提供市场分析。\n\n"
+    
+    # 2. 然后输出其他币种（标注为参考）
+    reference_coins = [coin for coin in all_coins if coin not in active_trading_coins]
+    
+    if reference_coins:
+        output += "=" * 80 + "\n"
+        output += "📊 **市场参考数据 - 仅供情绪分析（不可交易）**\n"
+        output += "=" * 80 + "\n"
+        output += "以下币种数据用于判断：\n"
+        output += "- 整体市场情绪（牛市/熊市/震荡）\n"
+        output += "- 风险偏好（避险情绪 vs 风险偏好）\n"
+        output += "- 资金流向（主流币 vs 山寨币）\n"
+        output += "- 相关性分析（如 DOGE 通常跟随 BTC 大趋势）\n\n"
+        output += "⚠️ **重要**：当前账户权益较低，系统**禁止交易**这些币种，任何针对它们的交易信号都会被自动拒绝。\n\n"
+        
+        for coin in reference_coins:
+            coin_output = _format_single_coin(coin, structured_market_data.get(coin))
+            if coin_output:
+                output += f"--- {coin} (仅供参考) ---\n\n"
+                output += coin_output
+    
+    return output

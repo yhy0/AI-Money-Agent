@@ -63,6 +63,9 @@ echo ""
 echo -e "${GREEN}🚀 启动交易机器人...${NC}"
 echo ""
 
+# 🎨 强制启用颜色输出（用于 tee 和 tail 查看日志）
+export FORCE_COLOR=1
+
 # 使用 nohup 在后台运行（可选）
 # nohup uv run python main.py --cycles 0 --interval 180 $DRY_RUN_FLAG > $LOG_FILE 2>&1 &
 # 启动后端

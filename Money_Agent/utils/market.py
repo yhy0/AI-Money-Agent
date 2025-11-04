@@ -27,8 +27,8 @@ def update_market_data(state: AgentState):
         # 根据账户权益动态调整交易币种
         
         # 🐛 调试日志 - 检查配置加载
-        logger.info(f"🔍 配置检查 - LOW_EQUITY_COINS: {LOW_EQUITY_COINS}, 类型: {type(LOW_EQUITY_COINS)}, 长度: {len(LOW_EQUITY_COINS)}")
-        logger.info(f"🔍 配置检查 - MIN_EQUITY_FOR_MULTI_ASSET: {MIN_EQUITY_FOR_MULTI_ASSET}")
+        log_system_event(f"🔍 配置检查 - LOW_EQUITY_COINS: {LOW_EQUITY_COINS}", {})
+        log_system_event(f"🔍 配置检查 - MIN_EQUITY_FOR_MULTI_ASSET: {MIN_EQUITY_FOR_MULTI_ASSET}", {})
         
         account_equity = balance.get('total_balance', 0)
         
@@ -36,7 +36,7 @@ def update_market_data(state: AgentState):
         if account_equity < MIN_EQUITY_FOR_MULTI_ASSET:
             # 低资金模式：只交易指定币种（默认 DOGE）
             active_coins = LOW_EQUITY_COINS
-            logger.info(f"🔍 进入低资金模式 - active_coins 赋值为: {active_coins}")
+            log_system_event(f"🔍 进入低资金模式 - active_coins 赋值为: {active_coins}", {})
             
             # 记录模式切换
             if not state.get('_low_equity_mode_logged', False):
@@ -68,7 +68,7 @@ def update_market_data(state: AgentState):
         state['active_trading_coins'] = active_coins
         
         # 🐛 调试日志
-        logger.info(f"🔍 update_market_data - 设置 active_trading_coins: {active_coins}, 长度: {len(active_coins)}")
+        log_system_event(f"🔍 update_market_data - 设置 active_trading_coins: {active_coins}", {})
         
         # 更新持仓信息
         positions = get_positions(exchange)

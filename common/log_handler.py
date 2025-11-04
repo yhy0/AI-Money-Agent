@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import sys
 import textwrap
 from typing import Any, Optional
@@ -23,11 +24,27 @@ CATEGORY_STYLES = {
     "STATE": "\033[92m",    # 绿色
     "SECURITY": "\033[93m", # 黄色
     "SYSTEM": "\033[94m",   # 蓝色
+    "CRITICAL": "\033[91m", # 红色（重点标记）
 }
 
 
 def _supports_color() -> bool:
-    """检测当前终端是否支持彩色输出。"""
+    """检测当前终端是否支持彩色输出。
+    
+    支持以下方式启用颜色：
+    1. 环境变量 FORCE_COLOR=1 或 FORCE_COLOR=true
+    2. 环境变量 NO_COLOR 未设置且 stdout 是 tty
+    """
+    # 1. 检查是否强制禁用颜色
+    if os.getenv('NO_COLOR'):
+        return False
+    
+    # 2. 检查是否强制启用颜色（用于 tee、less -R 等场景）
+    force_color = os.getenv('FORCE_COLOR', '').lower()
+    if force_color in ('1', 'true', 'yes'):
+        return True
+    
+    # 3. 默认检测 tty
     return sys.stdout.isatty()
 
 
@@ -62,9 +79,12 @@ def _log_with_category(category: str, title: str, payload: Any, *, level: int) -
     """
     category_key = category.upper()
     style = CATEGORY_STYLES.get(category_key, "")
-    label = _apply_style(style, f"[{category_key}]")
     
-    message_lines = [f"{label} {title}"]
+    # 🎨 将整行标题（包括标签和内容）都应用颜色
+    full_title = f"[{category_key}] {title}"
+    colored_title = _apply_style(style, full_title)
+    
+    message_lines = [colored_title]
     
     formatted_payload = _format_payload(payload)
     if formatted_payload:
@@ -115,3 +135,8 @@ def log_security_event(title: str, payload: Any = None, *, level: int = logging.
 def log_system_event(title: str, payload: Any = None, *, level: int = logging.INFO) -> None:
     """记录系统级别的提示，如初始化等。"""
     _log_with_category("SYSTEM", title, payload, level=level)
+
+
+def log_critical_event(title: str, payload: Any = None, *, level: int = logging.WARNING) -> None:
+    """记录重点标记的事件（红色高亮）。"""
+    _log_with_category("CRITICAL", title, payload, level=level)

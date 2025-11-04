@@ -8,7 +8,7 @@ import sqlite3
 import json
 from typing import Dict, Any, List, Optional
 from pathlib import Path
-from common.log_handler import logger
+from common.log_handler import logger, log_system_event
 
 # 数据库文件路径
 DB_PATH = Path(__file__).parent.parent / "data" / "agent_data.db"
@@ -288,8 +288,8 @@ class AgentDatabase:
         
         conn.commit()
         conn.close()
-        logger.info(f"💾 账户快照已保存：${account_info.get('account_value', 0):.6f} (BTC: ${btc_price or 0:.6f})")
-    
+        log_system_event(f"💾 账户快照已保存：${account_info.get('account_value', 0):.6f} (BTC: ${btc_price or 0:.6f})", {})
+
     def save_positions(self, positions: List[Dict[str, Any]]):
         """保存当前持仓（先清空旧数据）"""
         conn = self._get_connection()

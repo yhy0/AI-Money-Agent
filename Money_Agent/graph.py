@@ -10,12 +10,12 @@ from Money_Agent.tools.exchange_data_tool import (
     execute_trade_order,
     set_stop_loss_take_profit
 )
-from Money_Agent.config import MIN_EQUITY_FOR_MULTI_ASSET
+from Money_Agent.config import MIN_EQUITY_FOR_MULTI_ASSET, TRADING_COINS
 from Money_Agent.tools.exchange import exchange
 from Money_Agent.model import create_structured_model
 from Money_Agent.schemas import TradingDecision
-from common.log_handler import logger, log_agent_thought, log_state_update, log_system_event, log_security_event
-from Money_Agent.utils.prompt_formatter import format_positions
+from common.log_handler import logger, log_agent_thought, log_state_update, log_system_event, log_security_event, log_critical_event
+from Money_Agent.utils.prompt_formatter import format_positions, format_market_data_with_priority
 from Money_Agent.utils.market_regime import calculate_market_regime
 from Money_Agent.utils.trend_validation import validate_trend_consistency
 import json
@@ -61,6 +61,18 @@ def get_agent_decision(state: AgentState):
         
         is_low_equity_mode = state.get('_low_equity_mode', False)
         
+        # 🔥 防御性检查：确保 active_trading_coins 已设置
+        # 正常情况下应该由 update_market_data 设置，这里只是兜底
+        from Money_Agent.config import LOW_EQUITY_COINS
+        if not state.get('active_trading_coins'):
+            # 兜底逻辑：根据当前模式自动赋值
+            state['active_trading_coins'] = LOW_EQUITY_COINS if is_low_equity_mode else TRADING_COINS
+            log_agent_thought("⚠️ active_trading_coins 未设置，使用兜底逻辑", {
+                "设置为": state['active_trading_coins'],
+                "模式": "低资金模式" if is_low_equity_mode else "正常模式",
+                "说明": "正常情况下应由 update_market_data 设置"
+            })
+        
         if is_low_equity_mode:
             # 低资金模式：使用 DOGE 专用 Prompt
             system_prompt = DOGE_SYSTEM_PROMPT
@@ -96,9 +108,28 @@ def get_agent_decision(state: AgentState):
         # 计算市场状态
         market_regime = calculate_market_regime(state.get("structured_market_data", {}))
         
+        # 🔥 根据交易模式格式化市场数据
+        # 在低资金模式下，将可交易币种（如 DOGE）突出显示在前面
+        # 注意：此时 active_trading_coins 已经在前面确保设置了
+        if is_low_equity_mode and state['active_trading_coins']:
+            # 低资金模式：使用结构化数据重新格式化，突出可交易币种
+            market_data_formatted = format_market_data_with_priority(
+                structured_market_data=state.get("structured_market_data", {}),
+                active_trading_coins=state['active_trading_coins'],
+                all_coins=TRADING_COINS
+            )
+            log_agent_thought("📊 市场数据已按优先级重新格式化", {
+                "模式": "低资金模式",
+                "可交易币种": ", ".join(state['active_trading_coins']),
+                "参考币种": ", ".join([c for c in TRADING_COINS if c not in state['active_trading_coins']])
+            })
+        else:
+            # 正常模式：使用原始格式化数据
+            market_data_formatted = state["market_data"]
+        
         formatted_prompt = prompt.format(
             minutes_elapsed=state["minutes_elapsed"],
-            market_data=state["market_data"],
+            market_data=market_data_formatted,  # 使用格式化后的市场数据
             return_pct=account_info.get("return_pct", 0),
             sharpe_ratio=account_info.get("sharpe_ratio", 0),
             cash_available=account_info.get("cash_available", 10000),
@@ -198,13 +229,13 @@ def get_agent_decision(state: AgentState):
         
         # ==================== 🔥 交易限制检查 ====================
         # 只限制新开仓信号（buy_to_enter, sell_to_enter），允许平仓（close）和持有（hold）
-        active_coins = state.get('active_trading_coins', [])
+        # 注意：active_trading_coins 已在前面确保设置
         
         # 🐛 调试日志
-        logger.info(f"🔍 交易限制检查 - active_coins: {active_coins}, 类型: {type(active_coins)}, 长度: {len(active_coins)}")
-        logger.info(f"🔍 决策信号: {decision.signal}, 币种: {decision.coin}")
-        
-        if decision.signal in ["buy_to_enter", "sell_to_enter"] and decision.coin not in active_coins:
+        log_system_event(f"🔍 交易限制检查 - active_trading_coins: {state['active_trading_coins']}", {})
+        log_critical_event(f"🔍 决策信号: {decision.signal}, 币种: {decision.coin}", {})
+
+        if decision.signal in ["buy_to_enter", "sell_to_enter"] and decision.coin not in state['active_trading_coins']:
             # 拒绝该交易，强制改为 hold
             original_signal = decision.signal
             original_coin = decision.coin
@@ -212,7 +243,7 @@ def get_agent_decision(state: AgentState):
             log_system_event("🚫 交易被限制", {
                 "原始信号": original_signal,
                 "目标币种": original_coin,
-                "限制原因": f"当前只允许交易 {', '.join(active_coins)}",
+                "限制原因": f"当前只允许交易 {', '.join(state['active_trading_coins'])}",
                 "账户权益": f"${account_info.get('account_value', 0):.6f}",
                 "处理方式": "强制改为 hold 信号",
                 "说明": "close 信号不受限制，可以平仓任何持仓"
@@ -223,9 +254,9 @@ def get_agent_decision(state: AgentState):
             decision.coin = ""
             decision.quantity = 0.0
             logger.info("准备修改 justification...")
-            decision.justification = f"[系统限制] 原计划 {original_signal} {original_coin}，但当前低资金模式只允许交易 {', '.join(active_coins)}。{decision.justification}"
+            decision.justification = f"[系统限制] 原计划 {original_signal} {original_coin}，但当前低资金模式只允许交易 {', '.join(state['active_trading_coins'])}。{decision.justification}"
             logger.info(f"justification 修改完成: {decision.justification}")
-            logger.info(f"[系统限制] 原计划 {original_signal} {original_coin}，但当前低资金模式只允许交易 {', '.join(active_coins)}。{decision.justification}")
+            logger.info(f"[系统限制] 原计划 {original_signal} {original_coin}，但当前低资金模式只允许交易 {', '.join(state['active_trading_coins'])}。{decision.justification}")
        
         # 转换为字典格式
         state["decision"] = decision.dict()
