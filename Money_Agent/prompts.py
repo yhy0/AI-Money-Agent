@@ -371,12 +371,6 @@ USER_PROMPT_TEMPLATE = """
 
 ---
 
-## 所有代币的当前市场状态
-
-{market_data}
-
----
-
 ## 这是您的账户信息和表现
 
 **表现指标:**
@@ -384,12 +378,29 @@ USER_PROMPT_TEMPLATE = """
 - 夏普比率: {sharpe_ratio}
 
 **账户状态:**
+- 起始资金:  $10
 - 可用现金: ${cash_available}
 - **当前账户价值:** ${account_value}
 
 **当前实时头寸和表现:**
 
 {positions_formatted}
+
+---
+
+## 历史交易表现回顾 (最近 24 小时)
+
+这是你过去已平仓交易的总结，用它来评估你的策略，避免重复错误，并识别你的行为模式。
+
+```json
+{historical_analysis_json}
+```
+
+---
+
+## 所有代币的当前市场状态
+
+{market_data}
 
 ---
 

@@ -11,39 +11,52 @@ from Money_Agent.graph import (
 
 from Money_Agent.utils.market import update_market_data
 from Money_Agent.utils.performance import calculate_performance_metrics
+# 新增导入
+from Money_Agent.tools.trade_history_analyzer import generate_llm_data
 from Money_Agent.database import get_database
 from common.log_handler import logger, log_system_event
+
+# --- 新增节点函数 ---
+async def update_historical_analysis(state: AgentState) -> AgentState:
+    """获取历史交易分析并更新状态"""
+    logger.info("📥 正在更新历史交易分析...")
+    # 这个函数需要 exchange 实例，我们假设它在 state['account_info'] 中可用
+    # 或者需要从别处获取。这里我们假设 get_exchange() 可以工作。
+    from Money_Agent.tools.exchange_data_tool import get_exchange
+    exchange = get_exchange()
+
+    analysis_data = await generate_llm_data(exchange)
+    state['historical_analysis'] = analysis_data
+    logger.info("✅ 历史交易分析更新完毕")
+    return state
 
 
 def create_trading_workflow():
     """创建交易工作流（带 Langfuse 监控）"""
     
-    # 创建状态图
     workflow = StateGraph(AgentState)
     
-    # 添加节点
+    # 添加所有节点，包括新的分析节点
     workflow.add_node("update_market_data", update_market_data)
+    workflow.add_node("update_historical_analysis", update_historical_analysis) # 新节点
     workflow.add_node("get_agent_decision", get_agent_decision)
     workflow.add_node("execute_trade", execute_trade)
     workflow.add_node("calculate_performance", calculate_performance_metrics)
     
-    # 定义工作流路径
+    # 定义新的工作流路径
     workflow.set_entry_point("update_market_data")
-    
-    workflow.add_edge("update_market_data", "get_agent_decision")
+    workflow.add_edge("update_market_data", "update_historical_analysis") # 先更新市场数据
+    workflow.add_edge("update_historical_analysis", "get_agent_decision") # 然后更新历史分析，再交给 LLM
     workflow.add_edge("get_agent_decision", "execute_trade")
     workflow.add_edge("execute_trade", "calculate_performance")
     workflow.add_edge("calculate_performance", END)
     
-    # 初始化 Langfuse CallbackHandler
     try:
         langfuse_handler = CallbackHandler()
-        # 编译工作流并添加 Langfuse 回调（自动追踪整个图）
         app = workflow.compile().with_config({"callbacks": [langfuse_handler]})
         log_system_event("✅ 交易工作流创建完成, 已启用 Langfuse 监控", {})
     except Exception as e:
         logger.warning(f"⚠️ Langfuse 初始化失败，使用无监控模式: {e}")
-        # 如果 Langfuse 初始化失败，使用普通编译
         app = workflow.compile()
         log_system_event("✅ 交易工作流创建完成, 无监控模式", {})
     
@@ -56,24 +69,14 @@ def run_trading_cycle(app, state: AgentState) -> AgentState:
         cycle_num = state['minutes_elapsed']//3 + 1
         log_system_event(f"🚀 开始交易周期 第 {cycle_num} 轮", {})
         
-        # 执行工作流（Langfuse 会自动追踪整个流程）
         result = app.invoke(state)
         
-        # 保存数据到数据库
         db = get_database()
-        
-        # 1. 保存账户快照
         db.save_account_snapshot(result['account_info'])
-        
-        # 2. 保存持仓
         if result.get('positions'):
             db.save_positions(result['positions'])
-        
-        # 3. 保存决策
         if result.get('decision'):
             db.save_decision(cycle_num, result['decision'])
-        
-        # 4. 保存交易记录（如果有交易）
         if result.get('decision', {}).get('signal') not in ['hold', None]:
             db.save_trade(cycle_num, result['decision'])
         
@@ -86,11 +89,7 @@ def run_trading_cycle(app, state: AgentState) -> AgentState:
 
 
 def initialize_agent_state(dry_run: bool = False) -> AgentState:
-    """初始化 Agent 状态
-    
-    Args:
-        dry_run: 是否为模拟运行模式（不执行实际交易）
-    """
+    """初始化 Agent 状态"""
     return {
         "minutes_elapsed": 0,
         "market_data": "",
@@ -103,20 +102,18 @@ def initialize_agent_state(dry_run: bool = False) -> AgentState:
             "return_pct": 0.0,
             "sharpe_ratio": 0.0,
         },
+        "historical_analysis": {}, # 初始化新字段
         "trade_history": [],
         "dry_run": dry_run,
-        "active_trading_coins": [],  # 将在 update_market_data 中根据账户权益设置
-        "_low_equity_mode": False,  # 低资金模式标志
-        "_low_equity_mode_logged": False  # 避免重复日志
+        "active_trading_coins": [],
+        "_low_equity_mode": False,
+        "_low_equity_mode_logged": False
     }
 
 
 if __name__ == "__main__":
-    # 测试工作流（默认使用模拟模式）
     app = create_trading_workflow()
     state = initialize_agent_state(dry_run=True)
-    
-    # 运行一个交易周期
     result = run_trading_cycle(app, state)
     
     print("=== 交易结果 ===")

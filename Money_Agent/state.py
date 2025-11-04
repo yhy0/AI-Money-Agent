@@ -15,6 +15,8 @@ class AgentState(TypedDict):
     account_info: Dict[str, Any]
     # Agent 的决策
     decision: Dict[str, Any]
+    # 新增字段：历史交易分析结果
+    historical_analysis: Dict[str, Any]
     # 交易历史
     trade_history: List[Dict[str, Any]]
     # 模拟运行模式（不执行实际交易）

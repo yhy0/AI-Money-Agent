@@ -15,6 +15,7 @@ from Money_Agent.model import create_structured_model
 from Money_Agent.schemas import TradingDecision
 from common.log_handler import logger, log_agent_thought, log_state_update, log_system_event, log_security_event
 from Money_Agent.utils.prompt_formatter import format_positions
+import json
 
 
 # 初始化结构化输出模型
@@ -84,6 +85,10 @@ def get_agent_decision(state: AgentState):
         # 使用新的格式化工具生成高质量的持仓描述（传入交易历史以恢复 exit_plan）
         trade_history = state.get("trade_history", [])
         positions_formatted = format_positions(positions, trade_history)
+
+        # 从 state 中获取历史分析数据并格式化
+        historical_analysis_data = state.get('historical_analysis', {})
+        historical_analysis_json_string = json.dumps(historical_analysis_data, indent=2, ensure_ascii=False)
         
         formatted_prompt = prompt.format(
             minutes_elapsed=state["minutes_elapsed"],
@@ -93,6 +98,7 @@ def get_agent_decision(state: AgentState):
             cash_available=account_info.get("cash_available", 10000),
             account_value=account_info.get("account_value", 10000),
             positions_formatted=positions_formatted,
+            historical_analysis_json=historical_analysis_json_string # 注入历史分析数据
         )
         
         # 🔥 记录 LLM 输入（简化版，避免过长）
