@@ -1,12 +1,13 @@
 from common.log_handler import logger, log_state_update, log_system_event
 from Money_Agent.state import AgentState
 from Money_Agent.database import get_database
-from Money_Agent.config import exchange, MIN_EQUITY_FOR_MULTI_ASSET, LOW_EQUITY_COINS, TRADING_COINS, TRADING_COINS
+from Money_Agent.config import MIN_EQUITY_FOR_MULTI_ASSET, LOW_EQUITY_COINS, TRADING_COINS, TRADING_COINS
 from Money_Agent.tools.exchange_data_tool import (
     get_market_data, 
     get_account_balance, 
     get_positions
 )
+from Money_Agent.tools.exchange import exchange
 
 def update_market_data(state: AgentState):
     """更新市场数据和账户信息。"""
@@ -129,7 +130,9 @@ def update_market_data(state: AgentState):
             log_system_event("🔍 正在获取市场数据...", "")
         
         # get_market_data 返回的是格式化的字符串，不是列表
-        state["market_data"] = get_market_data(exchange)
+        formatted_str, structured_data = get_market_data(exchange)
+        state["market_data"] = formatted_str
+        state["structured_market_data"] = structured_data
         
         # 保存市场价格到数据库（从交易所获取最新价格）
         try:

@@ -134,7 +134,7 @@ def get_agent_decision(state: AgentState):
         if decision.signal in ['buy_to_enter', 'sell_to_enter']:
             validation_result = validate_trend_consistency(
                 decision.dict(),
-                state["market_data"],
+                state["structured_market_data"],
                 state.get("trade_history", [])
             )
             

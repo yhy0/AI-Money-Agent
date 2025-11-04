@@ -1,98 +1,57 @@
-import re
+import pandas as pd
+from typing import Dict, Any, List
 from common.log_handler import logger
 
 
-def extract_market_indicators(market_data_str: str, coin: str) -> dict:
-    """从格式化的市场数据字符串中提取技术指标
+def extract_market_indicators(structured_market_data: Dict[str, Any], coin: str) -> Dict[str, Any]:
+    """从结构化的市场数据中提取单个币种的技术指标
     
     Args:
-        market_data_str: 格式化的市场数据字符串
+        structured_market_data: 包含所有币种结构化数据的字典
         coin: 币种名称（如 "BTC", "DOGE"）
     
     Returns:
         包含技术指标的字典，如果提取失败则返回 None
     """
     try:
-        # 查找该币种的数据块
-        pattern = f"### 所有 {coin} 数据.*?(?=### 所有|$)"
-        match = re.search(pattern, market_data_str, re.DOTALL)
-        
-        if not match:
-            logger.warning(f"未找到 {coin} 的市场数据")
+        coin_data = structured_market_data.get(coin)
+        if not coin_data or not coin_data.get('success'):
+            logger.warning(f"在 structured_market_data 中未找到 {coin} 的有效数据")
             return None
-        
-        coin_data = match.group(0)
-        
-        # 提取关键指标
-        indicators = {}
-        
-        # 提取当前价格
-        price_match = re.search(r'当前价格:\s*\$?([\d.]+)', coin_data)
-        if price_match:
-            indicators['current_price'] = float(price_match.group(1))
-        
-        # 提取 3min EMA20
-        ema20_3m_match = re.search(r'当前 EMA\(20\):\s*\$?([\d.]+)', coin_data)
-        if ema20_3m_match:
-            indicators['ema20_3m'] = float(ema20_3m_match.group(1))
-        
-        # 提取 3min MACD
-        macd_3m_match = re.search(r'当前 MACD:\s*(-?[\d.]+)', coin_data)
-        if macd_3m_match:
-            indicators['macd_3m'] = float(macd_3m_match.group(1))
-        
-        # 提取 3min RSI
-        rsi_3m_match = re.search(r'当前 RSI \(7周期\):\s*([\d.]+)', coin_data)
-        if rsi_3m_match:
-            indicators['rsi_7_3m'] = float(rsi_3m_match.group(1))
-        
-        # 提取 4h EMA20 和 EMA50
-        ema_4h_match = re.search(r'20周期 EMA:\s*\$?([\d.]+)\s*vs\.\s*50周期 EMA:\s*\$?([\d.]+)', coin_data)
-        if ema_4h_match:
-            indicators['ema20_4h'] = float(ema_4h_match.group(1))
-            indicators['ema50_4h'] = float(ema_4h_match.group(2))
-        
-        # 提取 4h MACD（从序列中取最后一个值）
-        macd_4h_match = re.search(r'MACD 指标 \(4h\):\s*\[(.*?)\]', coin_data)
-        if macd_4h_match:
-            macd_values = macd_4h_match.group(1).split(',')
-            # 取最后一个非 N/A 的值
-            for val in reversed(macd_values):
-                val = val.strip()
-                if val != 'N/A':
-                    try:
-                        indicators['macd_4h'] = float(val)
-                        break
-                    except ValueError:
-                        continue
-        
-        # 提取 4h RSI（从序列中取最后一个值）
-        rsi_4h_match = re.search(r'RSI 指标 \(14周期, 4h\):\s*\[(.*?)\]', coin_data)
-        if rsi_4h_match:
-            rsi_values = rsi_4h_match.group(1).split(',')
-            # 取最后一个非 N/A 的值
-            for val in reversed(rsi_values):
-                val = val.strip()
-                if val != 'N/A':
-                    try:
-                        indicators['rsi_14_4h'] = float(val)
-                        break
-                    except ValueError:
-                        continue
-        
-        return indicators if indicators else None
-        
+
+        df_3m = coin_data.get('df_3m')
+        df_4h = coin_data.get('df_4h')
+
+        if df_3m is None or df_4h is None or df_3m.empty or df_4h.empty:
+            logger.warning(f"{coin} 的 DataFrame 为空或不存在")
+            return None
+
+        indicators = {
+            'current_price': coin_data.get('current_price'),
+            'ema20_3m': safe_get_latest(df_3m, 'EMA_20'),
+            'macd_3m': safe_get_latest(df_3m, 'MACD_12_26_9'),
+            'rsi_7_3m': safe_get_latest(df_3m, 'RSI_7'),
+            'ema20_4h': safe_get_latest(df_4h, 'EMA_20_4h'),
+            'ema50_4h': safe_get_latest(df_4h, 'EMA_50_4h'),
+            'macd_4h': safe_get_latest(df_4h, 'MACD_4h'),
+            'rsi_14_4h': safe_get_latest(df_4h, 'RSI_14_4h'),
+        }
+
+        # 过滤掉值为 None 的指标
+        valid_indicators = {k: v for k, v in indicators.items() if v is not None}
+        return valid_indicators
+
     except Exception as e:
-        logger.error(f"提取 {coin} 市场指标失败: {e}")
+        logger.error(f"从 structured_market_data 提取 {coin} 指标失败: {e}")
         return None
 
 
-def validate_trend_consistency(decision: dict, market_data_str: str, trade_history: list) -> dict:
+def validate_trend_consistency(decision: dict, structured_market_data: Dict[str, Any], trade_history: list) -> dict:
     """验证决策是否符合趋势一致性规则
     
     Args:
         decision: LLM 的交易决策
-        market_data_str: 格式化的市场数据字符串
+        structured_market_data: 包含所有币种结构化数据的字典
         trade_history: 交易历史记录
     
     Returns:
@@ -113,7 +72,7 @@ def validate_trend_consistency(decision: dict, market_data_str: str, trade_histo
         return result
     
     # 提取市场指标
-    indicators = extract_market_indicators(market_data_str, coin)
+    indicators = extract_market_indicators(structured_market_data, coin)
     
     if not indicators:
         result['warnings'].append(f"无法提取 {coin} 的市场指标，跳过趋势验证")
@@ -201,3 +160,10 @@ def validate_trend_consistency(decision: dict, market_data_str: str, trade_histo
             )
     
     return result
+
+
+def safe_get_latest(df: pd.DataFrame, col: str):
+    """安全地获取 DataFrame 的最后一行的指定列值"""
+    if col in df.columns and not df[col].empty:
+        return df[col].iloc[-1]
+    return None

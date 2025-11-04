@@ -165,6 +165,74 @@ class AgentDatabase:
             )
         """)
         
+        # 7. 成交历史表（详细的交易所成交记录）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS executed_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                exchange_timestamp DATETIME,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                amount REAL NOT NULL,
+                price REAL NOT NULL,
+                cost REAL NOT NULL,
+                fee REAL DEFAULT 0,
+                fee_currency TEXT DEFAULT 'USDT',
+                fee_rate REAL DEFAULT 0,
+                order_id TEXT,
+                trade_id TEXT UNIQUE,
+                type TEXT,
+                taker_or_maker TEXT,
+                info TEXT
+            )
+        """)
+        
+        # 8. 已平仓订单表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS closed_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                exchange_timestamp DATETIME,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                amount REAL NOT NULL,
+                price REAL NOT NULL,
+                cost REAL NOT NULL,
+                fee REAL DEFAULT 0,
+                fee_currency TEXT DEFAULT 'USDT',
+                order_id TEXT UNIQUE,
+                type TEXT,
+                status TEXT,
+                info TEXT
+            )
+        """)
+        
+        # 9. 交易对分析表（配对的开仓和平仓）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS trade_pairs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                symbol TEXT NOT NULL,
+                entry_side TEXT NOT NULL,
+                entry_price REAL NOT NULL,
+                entry_amount REAL NOT NULL,
+                entry_cost REAL NOT NULL,
+                entry_fee REAL DEFAULT 0,
+                entry_time DATETIME,
+                exit_side TEXT NOT NULL,
+                exit_price REAL NOT NULL,
+                exit_amount REAL NOT NULL,
+                exit_cost REAL NOT NULL,
+                exit_fee REAL DEFAULT 0,
+                exit_time DATETIME,
+                pnl REAL NOT NULL,
+                pnl_pct REAL NOT NULL,
+                total_fee REAL DEFAULT 0,
+                leverage INTEGER DEFAULT 1,
+                duration_minutes REAL DEFAULT 0
+            )
+        """)
+        
         # 创建索引以提高查询性能
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_account_timestamp ON account_history(timestamp)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_position_timestamp ON position_history(timestamp)")
@@ -172,6 +240,12 @@ class AgentDatabase:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_decision_timestamp ON decision_history(timestamp)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_market_timestamp ON market_price_history(timestamp, coin)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON system_logs(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_executed_trades_timestamp ON executed_trades(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_executed_trades_symbol ON executed_trades(symbol)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_closed_orders_timestamp ON closed_orders(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_closed_orders_symbol ON closed_orders(symbol)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trade_pairs_timestamp ON trade_pairs(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trade_pairs_symbol ON trade_pairs(symbol)")
         
         conn.commit()
         conn.close()
@@ -623,29 +697,36 @@ def get_database() -> AgentDatabase:
     if _db_instance is None:
         _db_instance = AgentDatabase()
     return _db_instance
-
-
-if __name__ == "__main__":
-    # 测试数据库
-    db = AgentDatabase()
     
-    # 测试保存账户快照
-    db.save_account_snapshot({
-        'total_balance': 1000.0,
-        'free_balance': 500.0,
-        'used_balance': 500.0,
-        'account_value': 1050.0,
-        'return_pct': 5.0,
-        'sharpe_ratio': 1.5,
-        'max_drawdown': -2.0,
-        'win_rate': 60.0,
-        'total_trades': 10,
-        'minutes_elapsed': 180
-    })
+    # ==================== 成交记录方法 ====================
     
-    # 测试读取
-    latest = db.get_latest_account()
-    print(f"✅ 最新账户：{latest}")
-    
-    stats = db.get_statistics()
-    print(f"✅ 统计数据：{stats}")
+    def save_executed_trades(self, trades: List[Dict[str, Any]]):
+        """保存成交历史记录"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        for trade in trades:
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO executed_trades (
+                        exchange_timestamp, symbol, side, amount, price, cost,
+                        fee, fee_currency, fee_rate, order_id, trade_id, type,
+                        taker_or_maker, info
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    trade.get('datetime'),
+                    trade.get('symbol'),
+                    trade.get('side'),
+                    trade.get('amount'),
+                    trade.get('price'),
+                    trade.get('cost'),
+                    trade.get('fee'),
+                    trade.get('fee_currency', 'USDT'),
+                    trade.get('fee_rate', 0),
+                    trade.get('order_id'),
+                    trade.get('trade_id'),
+                    trade.get('type'),
+                    trade.get('takerOrMaker'),
+                    json.dumps(trade.get('info', {}))
+                ))
+            except Exception as e:\n                logger.warning(f\"保存成交记录失败: {e}\")\n                continue\n        \n        conn.commit()\n        conn.close()\n        logger.info(f\"💾 已保存 {len(trades)} 条成交记录\")\n    \n    def save_closed_orders(self, orders: List[Dict[str, Any]]):\n        \"\"\"保存已平仓订单\"\"\"\n        conn = self._get_connection()\n        cursor = conn.cursor()\n        \n        for order in orders:\n            try:\n                cursor.execute(\"\"\"\n                    INSERT OR IGNORE INTO closed_orders (\n                        exchange_timestamp, symbol, side, amount, price, cost,\n                        fee, fee_currency, order_id, type, status, info\n                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n                \"\"\", (\n                    order.get('datetime'),\n                    order.get('symbol'),\n                    order.get('side'),\n                    order.get('amount'),\n                    order.get('price'),\n                    order.get('cost'),\n                    order.get('fee'),\n                    order.get('fee_currency', 'USDT'),\n                    order.get('order_id'),\n                    order.get('type'),\n                    order.get('status'),\n                    json.dumps(order.get('info', {}))\n                ))\n            except Exception as e:\n                logger.warning(f\"保存已平仓订单失败: {e}\")\n                continue\n        \n        conn.commit()\n        conn.close()\n        logger.info(f\"💾 已保存 {len(orders)} 个已平仓订单\")\n    \n    def save_trade_pairs(self, pairs: List[Dict[str, Any]]):\n        \"\"\"保存交易对分析结果\"\"\"\n        conn = self._get_connection()\n        cursor = conn.cursor()\n        \n        for pair in pairs:\n            try:\n                cursor.execute(\"\"\"\n                    INSERT INTO trade_pairs (\n                        symbol, entry_side, entry_price, entry_amount, entry_cost,\n                        entry_fee, entry_time, exit_side, exit_price, exit_amount,\n                        exit_cost, exit_fee, exit_time, pnl, pnl_pct, total_fee,\n                        leverage, duration_minutes\n                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n                \"\"\", (\n                    pair.get('symbol'),\n                    pair.get('entry_side'),\n                    pair.get('entry_price'),\n                    pair.get('entry_amount'),\n                    pair.get('entry_cost'),\n                    pair.get('entry_fee'),\n                    pair.get('entry_time'),\n                    pair.get('exit_side'),\n                    pair.get('exit_price'),\n                    pair.get('exit_amount'),\n                    pair.get('exit_cost'),\n                    pair.get('exit_fee'),\n                    pair.get('exit_time'),\n                    pair.get('pnl'),\n                    pair.get('pnl_pct'),\n                    pair.get('total_fee'),\n                    pair.get('leverage', 1),\n                    pair.get('duration_minutes')\n                ))\n            except Exception as e:\n                logger.warning(f\"保存交易对失败: {e}\")\n                continue\n        \n        conn.commit()\n        conn.close()\n        logger.info(f\"💾 已保存 {len(pairs)} 个交易对\")\n    \n    def get_executed_trades(self, symbol: str = None, hours: int = 24, limit: int = 100) -> List[Dict[str, Any]]:\n        \"\"\"获取成交历史\"\"\"\n        conn = self._get_connection()\n        cursor = conn.cursor()\n        \n        if symbol:\n            cursor.execute(\"\"\"\n                SELECT * FROM executed_trades\n                WHERE symbol = ? AND timestamp >= datetime('now', '-' || ? || ' hours')\n                ORDER BY timestamp DESC\n                LIMIT ?\n            \"\"\", (symbol, hours, limit))\n        else:\n            cursor.execute(\"\"\"\n                SELECT * FROM executed_trades\n                WHERE timestamp >= datetime('now', '-' || ? || ' hours')\n                ORDER BY timestamp DESC\n                LIMIT ?\n            \"\"\", (hours, limit))\n        \n        rows = cursor.fetchall()\n        conn.close()\n        \n        trades = []\n        for row in rows:\n            trade = dict(row)\n            if trade.get('info'):\n                trade['info'] = json.loads(trade['info'])\n            trades.append(trade)\n        \n        return trades\n    \n    def get_closed_orders_history(self, symbol: str = None, hours: int = 24, limit: int = 100) -> List[Dict[str, Any]]:\n        \"\"\"获取已平仓订单\"\"\"\n        conn = self._get_connection()\n        cursor = conn.cursor()\n        \n        if symbol:\n            cursor.execute(\"\"\"\n                SELECT * FROM closed_orders\n                WHERE symbol = ? AND timestamp >= datetime('now', '-' || ? || ' hours')\n                ORDER BY timestamp DESC\n                LIMIT ?\n            \"\"\", (symbol, hours, limit))\n        else:\n            cursor.execute(\"\"\"\n                SELECT * FROM closed_orders\n                WHERE timestamp >= datetime('now', '-' || ? || ' hours')\n                ORDER BY timestamp DESC\n                LIMIT ?\n            \"\"\", (hours, limit))\n        \n        rows = cursor.fetchall()\n        conn.close()\n        \n        orders = []\n        for row in rows:\n            order = dict(row)\n            if order.get('info'):\n                order['info'] = json.loads(order['info'])\n            orders.append(order)\n        \n        return orders\n    \n    def get_trade_pairs_history(self, symbol: str = None, hours: int = 24, limit: int = 100) -> List[Dict[str, Any]]:\n        \"\"\"获取交易对分析结果\"\"\"\n        conn = self._get_connection()\n        cursor = conn.cursor()\n        \n        if symbol:\n            cursor.execute(\"\"\"\n                SELECT * FROM trade_pairs\n                WHERE symbol = ? AND timestamp >= datetime('now', '-' || ? || ' hours')\n                ORDER BY timestamp DESC\n                LIMIT ?\n            \"\"\", (symbol, hours, limit))\n        else:\n            cursor.execute(\"\"\"\n                SELECT * FROM trade_pairs\n                WHERE timestamp >= datetime('now', '-' || ? || ' hours')\n                ORDER BY timestamp DESC\n                LIMIT ?\n            \"\"\", (hours, limit))\n        \n        rows = cursor.fetchall()\n        conn.close()\n        \n        return [dict(row) for row in rows]\n    \n    def get_trade_statistics(self, hours: int = 24) -> Dict[str, Any]:\n        \"\"\"获取交易统计数据\"\"\"\n        conn = self._get_connection()\n        cursor = conn.cursor()\n        \n        # 获取交易对统计\n        cursor.execute(\"\"\"\n            SELECT \n                COUNT(*) as total_pairs,\n                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winning_pairs,\n                SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losing_pairs,\n                SUM(pnl) as total_pnl,\n                AVG(pnl) as avg_pnl,\n                SUM(total_fee) as total_fees,\n                AVG(pnl_pct) as avg_pnl_pct,\n                MAX(pnl) as max_pnl,\n                MIN(pnl) as min_pnl\n            FROM trade_pairs\n            WHERE timestamp >= datetime('now', '-' || ? || ' hours')\n        \"\"\", (hours,))\n        \n        row = cursor.fetchone()\n        conn.close()\n        \n        if row:\n            stats = dict(row)\n            # 计算胜率\n            total = stats.get('total_pairs', 0)\n            if total > 0:\n                stats['win_rate'] = (stats.get('winning_pairs', 0) / total) * 100\n            else:\n                stats['win_rate'] = 0\n            return stats\n        \n        return {\n            'total_pairs': 0,\n            'winning_pairs': 0,\n            'losing_pairs': 0,\n            'total_pnl': 0,\n            'avg_pnl': 0,\n            'total_fees': 0,\n            'avg_pnl_pct': 0,\n            'max_pnl': 0,\n            'min_pnl': 0,\n            'win_rate': 0\n        }\n\n\nif __name__ == \"__main__\":\n    # 测试数据库\n    db = AgentDatabase()\n    \n    # 测试保存账户快照\n    db.save_account_snapshot({\n        'total_balance': 1000.0,\n        'free_balance': 500.0,\n        'used_balance': 500.0,\n        'account_value': 1050.0,\n        'return_pct': 5.0,\n        'sharpe_ratio': 1.5,\n        'max_drawdown': -2.0,\n        'win_rate': 60.0,\n        'total_trades': 10,\n        'minutes_elapsed': 180\n    })\n    \n    # 测试读取\n    latest = db.get_latest_account()\n    print(f\"✅ 最新账户：{latest}\")\n    \n    stats = db.get_statistics()\n    print(f\"✅ 统计数据：{stats}\")

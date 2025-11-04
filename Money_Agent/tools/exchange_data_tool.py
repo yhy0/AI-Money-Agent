@@ -2,17 +2,17 @@
 import ccxt
 import pandas as pd
 import vectorbt as vbt
-import numpy as np
 import os
 import time
 from typing import Dict, Any, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from common.log_handler import logger, log_tool_event, log_system_event
 from Money_Agent.config import TRADING_COINS
+from Money_Agent.utils.prompt_formatter import format_coin_data
+    
 
 # 全局缓存字典
 _market_data_cache = {}
-_cache_duration = 180  # 缓存3分钟
 
 def clear_market_data_cache():
     """清理市场数据缓存"""
@@ -70,21 +70,6 @@ def get_exchange():
         "API配置": "已配置" if api_key else "未配置"
     })
     return exchange
-
-def _get_cached_data(cache_key: str, fetch_func, cache_duration: int = _cache_duration):
-    """通用缓存函数"""
-    current_time = time.time()
-    
-    if cache_key in _market_data_cache:
-        cached_data, timestamp = _market_data_cache[cache_key]
-        if current_time - timestamp < cache_duration:
-            logger.info(f"📦 使用缓存数据: {cache_key}")
-            return cached_data
-    
-    # 缓存过期或不存在，重新获取
-    data = fetch_func()
-    _market_data_cache[cache_key] = (data, current_time)
-    return data
 
 def _fetch_coin_data(exchange, coin: str) -> Dict[str, Any]:
     """获取单个币种的市场数据（用于并发调用）"""
@@ -185,15 +170,15 @@ def get_market_data(exchange, coins=None, max_workers=8):
         max_workers: 最大并发线程数 8 
     
     Returns:
-        格式化的市场数据字符串
+        格式化的市场数据字符串和结构化数据字典的元组
     """
     if coins is None:
         coins = TRADING_COINS
-    from Money_Agent.utils.prompt_formatter import format_coin_data
-    
+
     market_data_str = ""
     prices_summary = {}
     coin_results = []
+    structured_results = {}
     
     # 🔥 使用线程池并发获取数据
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -213,6 +198,7 @@ def get_market_data(exchange, coins=None, max_workers=8):
     
     # 格式化输出
     for result in coin_results:
+        structured_results[result['coin']] = result
         if result['success']:
             # 记录价格
             prices_summary[result['coin']] = result['current_price']
@@ -234,7 +220,7 @@ def get_market_data(exchange, coins=None, max_workers=8):
     if prices_summary:
         log_tool_event("市场价格汇总", prices_summary)
             
-    return market_data_str
+    return market_data_str, structured_results
 
 def get_account_balance(exchange) -> Dict[str, Any]:
     """获取账户余额信息"""
@@ -399,11 +385,11 @@ def get_market_limits(exchange, symbol: str) -> Dict[str, Any]:
     Returns:
         包含限制信息的字典
     """
-    # Bitget 真实/估计的最小交易数量（基于官方文档和实际错误）
+    # Bitget 的最小交易数量
     BITGET_MIN_AMOUNTS = {
         'BTC/USDT:USDT': 0.0001,
         'ETH/USDT:USDT': 0.001,
-        'SOL/USDT:USDT': 0.1,      # ✓ 从实际错误确认
+        'SOL/USDT:USDT': 0.1,     
         'LTC/USDT:USDT': 0.01,
         'SUI/USDT:USDT': 0.1,
         'BGB/USDT:USDT': 1,
@@ -1092,6 +1078,7 @@ def set_stop_loss_take_profit(
             "simulated": False,
             "order": None,
         }
+
 
 if __name__ == '__main__':
     # 用于测试

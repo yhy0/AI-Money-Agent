@@ -6,8 +6,6 @@ import os
 from typing import List, Literal
 from dotenv import load_dotenv
 
-from Money_Agent.tools.exchange_data_tool import get_exchange
-
 # 加载环境变量
 load_dotenv()
 
@@ -21,10 +19,6 @@ MIN_EQUITY_FOR_MULTI_ASSET = float(os.getenv('MIN_EQUITY_FOR_MULTI_ASSET', '30')
 # 低资金模式下允许交易的币种（默认只有 DOGE）
 LOW_EQUITY_COINS = os.getenv('LOW_EQUITY_COINS', 'DOGE').split(',')
 LOW_EQUITY_COINS = [coin.strip().upper() for coin in LOW_EQUITY_COINS if coin.strip()]
-
-
-# 初始化交易所
-exchange = get_exchange()
 
 
 def get_trading_coins() -> List[str]:

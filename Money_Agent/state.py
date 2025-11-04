@@ -5,8 +5,10 @@ from typing import TypedDict, List, Dict, Any
 class AgentState(TypedDict):
     # 运行的分钟数
     minutes_elapsed: int
-    # 市场数据
+    # 市场数据 (格式化为字符串，给 LLM 使用)
     market_data: str
+    # 结构化的市场数据 (用于内部逻辑，如趋势验证)
+    structured_market_data: Dict[str, Any]
     # 当前持仓
     positions: List[Dict[str, Any]]
     # 账户信息

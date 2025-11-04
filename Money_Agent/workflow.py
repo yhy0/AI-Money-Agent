@@ -94,6 +94,7 @@ def initialize_agent_state(dry_run: bool = False) -> AgentState:
     return {
         "minutes_elapsed": 0,
         "market_data": "",
+        "structured_market_data": {},
         "decision": {},
         "positions": [],
         "account_info": {
