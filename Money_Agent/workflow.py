@@ -3,14 +3,15 @@ AI Money Agent 的完整工作流定义
 """
 from langgraph.graph import StateGraph, END
 from langfuse.langchain import CallbackHandler
-from .state import AgentState
-from .graph import (
-    update_market_data,
-    get_decision,
+from Money_Agent.state import AgentState
+from Money_Agent.graph import (
+    get_agent_decision,
     execute_trade,
-    calculate_performance_metrics
 )
-from .database import get_database
+
+from Money_Agent.utils.market import update_market_data
+from Money_Agent.utils.performance import calculate_performance_metrics
+from Money_Agent.database import get_database
 from common.log_handler import logger, log_system_event
 
 
@@ -22,15 +23,15 @@ def create_trading_workflow():
     
     # 添加节点
     workflow.add_node("update_market_data", update_market_data)
-    workflow.add_node("get_decision", get_decision)
+    workflow.add_node("get_agent_decision", get_agent_decision)
     workflow.add_node("execute_trade", execute_trade)
     workflow.add_node("calculate_performance", calculate_performance_metrics)
     
     # 定义工作流路径
     workflow.set_entry_point("update_market_data")
     
-    workflow.add_edge("update_market_data", "get_decision")
-    workflow.add_edge("get_decision", "execute_trade")
+    workflow.add_edge("update_market_data", "get_agent_decision")
+    workflow.add_edge("get_agent_decision", "execute_trade")
     workflow.add_edge("execute_trade", "calculate_performance")
     workflow.add_edge("calculate_performance", END)
     
@@ -39,12 +40,12 @@ def create_trading_workflow():
         langfuse_handler = CallbackHandler()
         # 编译工作流并添加 Langfuse 回调（自动追踪整个图）
         app = workflow.compile().with_config({"callbacks": [langfuse_handler]})
-        log_system_event("✅ 交易工作流创建完成", "已启用 Langfuse 监控")
+        log_system_event("✅ 交易工作流创建完成, 已启用 Langfuse 监控", {})
     except Exception as e:
         logger.warning(f"⚠️ Langfuse 初始化失败，使用无监控模式: {e}")
         # 如果 Langfuse 初始化失败，使用普通编译
         app = workflow.compile()
-        log_system_event("✅ 交易工作流创建完成", "无监控模式")
+        log_system_event("✅ 交易工作流创建完成, 无监控模式", {})
     
     return app
 
@@ -53,7 +54,7 @@ def run_trading_cycle(app, state: AgentState) -> AgentState:
     """运行一个完整的交易周期"""
     try:
         cycle_num = state['minutes_elapsed']//3 + 1
-        log_system_event(f"🚀 开始交易周期", f"第 {cycle_num} 轮")
+        log_system_event(f"🚀 开始交易周期 第 {cycle_num} 轮", {})
         
         # 执行工作流（Langfuse 会自动追踪整个流程）
         result = app.invoke(state)
@@ -76,7 +77,7 @@ def run_trading_cycle(app, state: AgentState) -> AgentState:
         if result.get('decision', {}).get('signal') not in ['hold', None]:
             db.save_trade(cycle_num, result['decision'])
         
-        log_system_event(f"✅ 交易周期完成", "数据已保存到数据库")
+        log_system_event(f"✅ 交易周期完成,数据已保存到数据库", {})
         return result
         
     except Exception as e:

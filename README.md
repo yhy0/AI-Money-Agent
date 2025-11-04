@@ -94,90 +94,6 @@ python main.py --dry-run
 python -c "from main import test_single_cycle; test_single_cycle()"
 ```
 
-## 📁 项目结构
-
-```
-AI-Money-Agent/
-├── Money_Agent/                    # 核心 Agent 代码
-│   ├── __init__.py
-│   ├── state.py                   # 状态定义
-│   ├── schemas.py                 # 结构化输出模式
-│   ├── prompts.py                 # 提示词模板
-│   ├── model.py                   # 模型配置
-│   ├── graph.py                   # 图节点函数
-│   ├── workflow.py                # 完整工作流
-│   └── tools/                     # 工具模块
-│       └── exchange_data_tool.py  # 交易所数据工具
-├── common/                        # 公共工具
-│   ├── __init__.py
-│   └── logger.py                 # 日志配置
-├── main.py                       # 主程序入口
-├── pyproject.toml               # 项目配置
-├── .env.example                 # 环境变量模板
-└── README.md                    # 项目文档
-```
-
-## 🔧 核心组件
-
-### 1. 结构化输出 (`schemas.py`)
-使用 Pydantic 定义严格的交易决策输出格式：
-```python
-class TradingDecision(BaseModel):
-    signal: Literal["buy_to_enter", "sell_to_enter", "hold", "close"]
-    coin: Literal["BTC", "ETH", "SOL", "BNB", "DOGE", "XRP"]
-    quantity: float
-    leverage: int
-    profit_target: float
-    stop_loss: float
-    # ... 更多字段
-```
-
-### 2. 智能模型 (`model.py`)
-- 集成 DeepSeek 大语言模型
-- 支持 `with_structured_output` 约束输出格式
-- 自动重试和错误处理
-
-### 3. 交易所集成 (`exchange_data_tool.py`)
-- **Bitget 永续合约**: 完整的 API 集成
-- **实时数据**: 价格、技术指标、资金费率
-- **交易执行**: 开仓、平仓、止损止盈
-- **账户管理**: 余额查询、持仓管理
-
-### 4. 工作流引擎 (`workflow.py`)
-使用 LangGraph 构建完整的交易工作流：
-```
-更新市场数据 → 获取AI决策 → 执行交易 → 计算性能 → 结束
-```
-
-### 5. 提示词工程 (`prompts.py`)
-基于 nof1.ai 逆向工程的完整提示词，包括：
-- 🎯 **角色定义**: 专业交易 Agent 身份
-- 📋 **交易规则**: 完整的交易环境规范
-- ⚠️ **风险管理**: 强制性风险控制协议
-- 📊 **输出格式**: 严格的 JSON 输出约束
-
-## 📊 支持的交易对
-
-- **BTC/USDT**: 比特币永续合约
-- **ETH/USDT**: 以太坊永续合约  
-- **SOL/USDT**: Solana永续合约
-- **BGB/USDT**: BGB永续合约
-- **DOGE/USDT**: 狗狗币永续合约
-
-## 🛡️ 风险管理
-
-### 内置风险控制
-- ✅ **强制止损止盈**: 每笔交易必须设置
-- ✅ **头寸规模限制**: 基于信心度动态调整
-- ✅ **杠杆控制**: 1-20x 杠杆范围
-- ✅ **清算风险**: 确保清算价格距离 >15%
-- ✅ **资金管理**: 单笔交易风险 <3% 账户价值
-
-### 性能监控
-- 📈 **实时收益率**: 动态计算账户表现
-- 📊 **夏普比率**: 风险调整后收益评估
-- 📋 **交易历史**: 完整的交易记录追踪
-
 ## 🧪 测试和开发
 
 ```bash
@@ -196,16 +112,6 @@ uv run python test_offline.py
 # 调试模式运行
 LOG_LEVEL=DEBUG uv run python main.py --cycles 1
 ```
-
-## 🔄 与原版 nof1.ai 的差异
-
-| 特性 | nof1.ai | 本项目 |
-|------|---------|--------|
-| 交易所 | BitGet | Bitget |
-| 输出格式 | JSON 字符串解析 | 结构化输出 |
-| 工作流 | 未知 | LangGraph |
-| 风险管理 | 内置 | 完整实现 |
-| 开源程度 | 闭源 | 完全开源 |
 
 ## ⚠️ 风险声明
 

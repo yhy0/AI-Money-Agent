@@ -10,7 +10,7 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 logger = logging.getLogger("MoneyAgent")
 logger.setLevel(logging.INFO)
 logger.handlers.clear()
-handler = logging.StreamHandler()
+handler = logging.StreamHandler(sys.stdout)
 handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
 logger.addHandler(handler)
 logger.propagate = False
@@ -18,18 +18,11 @@ logger.propagate = False
 
 RESET = "\033[0m"
 CATEGORY_STYLES = {
-    "LLM": "\033[95m",
-    "TOOL": "\033[96m",
-    "STATE": "\033[92m",
-    "SECURITY": "\033[93m",
-    "SYSTEM": "\033[94m",
-}
-LEVEL_STYLES = {
-    "DEBUG": "\033[37m",
-    "INFO": "\033[97m",
-    "WARNING": "\033[93m",
-    "ERROR": "\033[91m",
-    "CRITICAL": "\033[41m",
+    "LLM": "\033[95m",      # 紫色
+    "TOOL": "\033[96m",     # 青色
+    "STATE": "\033[92m",    # 绿色
+    "SECURITY": "\033[93m", # 黄色
+    "SYSTEM": "\033[94m",   # 蓝色
 }
 
 
@@ -42,13 +35,14 @@ _COLOR_ENABLED = _supports_color()
 
 
 def _apply_style(style: str, text: str) -> str:
+    """应用颜色样式到文本。"""
     if not _COLOR_ENABLED or not style:
         return text
     return f"{style}{text}{RESET}"
 
 
 def _format_payload(payload: Any) -> Optional[str]:
-    if payload is None:
+    if not payload:
         return None
     if isinstance(payload, (dict, list)):
         text = json.dumps(payload, ensure_ascii=False, indent=2)
@@ -57,21 +51,25 @@ def _format_payload(payload: Any) -> Optional[str]:
     return textwrap.indent(text, "  ")
 
 
-def _log_with_category(category: str, title: str, payload: Any, *, level: int, cluster_id: Optional[int] = None) -> None:
+def _log_with_category(category: str, title: str, payload: Any, *, level: int) -> None:
+    """记录带分类标签的日志。
+    
+    Args:
+        category: 日志分类（LLM/TOOL/STATE/SECURITY/SYSTEM）
+        title: 日志标题
+        payload: 附加数据（可选）
+        level: 日志级别
+    """
     category_key = category.upper()
     style = CATEGORY_STYLES.get(category_key, "")
     label = _apply_style(style, f"[{category_key}]")
     
-    # 如果提供了 cluster_id，添加到标签中
-    if cluster_id is not None:
-        cluster_label = _apply_style("\033[93m", f"[聚类 {cluster_id}]")  # 黄色
-        message_lines = [f"{label} {cluster_label} {title}"]
-    else:
-        message_lines = [f"{label} {title}"]
+    message_lines = [f"{label} {title}"]
     
     formatted_payload = _format_payload(payload)
     if formatted_payload:
         message_lines.append(formatted_payload)
+    
     message = "\n".join(message_lines)
     logger.log(level, "%s", message)
     
@@ -94,22 +92,26 @@ def _log_with_category(category: str, title: str, payload: Any, *, level: int, c
         # 如果保存失败，静默忽略（避免影响主流程）
         pass
 
-def log_agent_thought(title: str, payload: Any = None, cluster_id: Optional[int] = None) -> None:
-    """记录LLM的思考与输出。"""
-    _log_with_category("LLM", title, payload, level=logging.INFO, cluster_id=cluster_id)
+def log_agent_thought(title: str, payload: Any = None) -> None:
+    """记录 LLM 的思考与输出。"""
+    _log_with_category("LLM", title, payload, level=logging.INFO)
 
-def log_tool_event(title: str, payload: Any = None, *, level: int = logging.INFO, cluster_id: Optional[int] = None) -> None:
+
+def log_tool_event(title: str, payload: Any = None, *, level: int = logging.INFO) -> None:
     """记录工具调用及其结果。"""
-    _log_with_category("TOOL", title, payload, level=level, cluster_id=cluster_id)
+    _log_with_category("TOOL", title, payload, level=level)
 
-def log_state_update(title: str, payload: Any = None, *, level: int = logging.INFO, cluster_id: Optional[int] = None) -> None:
+
+def log_state_update(title: str, payload: Any = None, *, level: int = logging.INFO) -> None:
     """记录状态更新或关键结论。"""
-    _log_with_category("STATE", title, payload, level=level, cluster_id=cluster_id)
+    _log_with_category("STATE", title, payload, level=level)
 
-def log_security_event(title: str, payload: Any = None, *, level: int = logging.INFO, cluster_id: Optional[int] = None) -> None:
+
+def log_security_event(title: str, payload: Any = None, *, level: int = logging.INFO) -> None:
     """记录安全审查相关的消息。"""
-    _log_with_category("SECURITY", title, payload, level=level, cluster_id=cluster_id)
+    _log_with_category("SECURITY", title, payload, level=level)
 
-def log_system_event(title: str, payload: Any = None, *, level: int = logging.INFO, cluster_id: Optional[int] = None) -> None:
+
+def log_system_event(title: str, payload: Any = None, *, level: int = logging.INFO) -> None:
     """记录系统级别的提示，如初始化等。"""
-    _log_with_category("SYSTEM", title, payload, level=level, cluster_id=cluster_id)
+    _log_with_category("SYSTEM", title, payload, level=level)

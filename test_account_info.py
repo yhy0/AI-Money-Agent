@@ -114,9 +114,9 @@ def test_account_info():
             print(f"  方向: {pos.get('side', 'N/A')}")
             print(f"  数量: {pos.get('contracts', 0)} 张")
             print(f"  杠杆: {pos.get('leverage', 1)}x")
-            print(f"  开仓价: ${pos.get('entryPrice', 0):.6f}")
-            print(f"  当前价: ${pos.get('markPrice', 0):.6f}")
-            print(f"  未实现盈亏: ${pos.get('unrealizedPnl', 0):+.2f}")
+            print(f"  开仓价: ${pos.get('entry_price', 0):.6f}")
+            print(f"  当前价: ${pos.get('mark_price', 0):.6f}")
+            print(f"  未实现盈亏: ${pos.get('unrealized_pnl', 0):+.2f}")
             print(f"  收益率: {pos.get('percentage', 0):+.2f}%")
             print()
     else:

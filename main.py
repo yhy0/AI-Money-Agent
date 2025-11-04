@@ -13,6 +13,8 @@ load_dotenv()
 
 from Money_Agent.workflow import create_trading_workflow, initialize_agent_state, run_trading_cycle
 from Money_Agent.database import get_database
+from Money_Agent.tools.exchange_data_tool import clear_market_data_cache
+
 from common.log_handler import logger, log_system_event, log_state_update
 
 def main():
@@ -25,9 +27,6 @@ def main():
     
     args = parser.parse_args()
     
-    # 导入缓存清理函数
-    from Money_Agent.tools.exchange_data_tool import clear_market_data_cache
-    
     run_mode = "无限运行 (7×24)" if args.cycles == 0 else f"{args.cycles} 个周期"
     log_system_event("🚀 启动 AI Money Agent", {
         "运行模式": run_mode,
@@ -39,7 +38,7 @@ def main():
     try:
         # 初始化数据库（在程序启动时）
         db = get_database()
-        log_system_event("✅ 数据库初始化完成", f"路径: {db.db_path}")
+        log_system_event(f"✅ 数据库初始化完成, 路径: {db.db_path}", {})
         
         # 创建工作流
         app = create_trading_workflow()
@@ -50,11 +49,11 @@ def main():
         # 判断运行模式
         if args.cycles == 0:
             # 无限运行模式 (7×24)
-            log_system_event("🔄 进入无限运行模式", "按 Ctrl+C 停止")
+            log_system_event("🔄 进入无限运行模式, 按 Ctrl+C 停止", {})
             cycle = 0
             
             while True:
-                log_system_event(f"🔄 交易周期 {cycle + 1}", "开始执行")
+                log_system_event(f"🔄 交易周期 {cycle + 1} 开始执行", {})
                 
                 # 运行一个完整的交易周期
                 state = run_trading_cycle(app, state)
@@ -75,13 +74,13 @@ def main():
                     clear_market_data_cache()
                 
                 # 等待下一个周期
-                log_system_event(f"⏰ 等待下一周期", f"{args.interval} 秒")
+                log_system_event(f"⏰ 等待下一周期 {args.interval} 秒", {})
                 time.sleep(args.interval)
                 cycle += 1
         else:
             # 有限次数运行模式
             for cycle in range(args.cycles):
-                log_system_event(f"🔄 交易周期 {cycle + 1}/{args.cycles}", "开始执行")
+                log_system_event(f"🔄 交易周期 {cycle + 1}/{args.cycles} 开始执行", {})
                 
                 # 运行一个完整的交易周期
                 state = run_trading_cycle(app, state)
@@ -101,7 +100,7 @@ def main():
                 
                 # 如果不是最后一个周期，等待下一个周期
                 if cycle < args.cycles - 1:
-                    log_system_event(f"⏰ 等待下一周期", f"{args.interval} 秒")
+                    log_system_event(f"⏰ 等待下一周期 {args.interval} 秒", {})
                     time.sleep(args.interval)
             
     except KeyboardInterrupt:

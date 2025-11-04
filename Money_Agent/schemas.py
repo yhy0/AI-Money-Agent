@@ -1,10 +1,8 @@
 """
 交易决策的结构化输出模式定义
 """
-from typing import Literal, Optional
-from pydantic import BaseModel, Field, field_validator, model_validator
-from Money_Agent.config import ALL_SUPPORTED_COINS
-
+from typing import Literal
+from pydantic import BaseModel, Field, model_validator
 
 class TradingDecision(BaseModel):
     """交易决策的结构化输出模式"""
@@ -15,7 +13,7 @@ class TradingDecision(BaseModel):
     
     # 注意：Literal 类型必须硬编码，无法从配置动态生成
     # 如需添加新币种，请同时更新 Money_Agent/config.py 中的 ALL_SUPPORTED_COINS
-    coin: Literal["BTC", "ETH", "SOL", "BGB", "DOGE", "SUI", "LTC"] = Field(
+    coin: Literal["BTC", "ETH", "SOL", "BNB", "BGB", "DOGE", "SUI", "LTC"] = Field(
         description="交易的加密货币符号"
     )
     
@@ -30,14 +28,14 @@ class TradingDecision(BaseModel):
         description="杠杆倍数，范围 1-20"
     )
     
-    profit_target: float = Field(
+    take_profit_price: float = Field(
         ge=0,
-        description="止盈价格目标（hold信号时可以为0）"
+        description="止盈价格目标"
     )
     
-    stop_loss: float = Field(
+    stop_loss_price: float = Field(
         ge=0,
-        description="止损价格（hold信号时可以为0）"
+        description="止损价格"
     )
     
     invalidation_condition: str = Field(
@@ -67,10 +65,10 @@ class TradingDecision(BaseModel):
         # hold 信号的验证
         if self.signal == 'hold':
             # hold 信号允许价格为 0
-            if self.profit_target is None:
-                self.profit_target = 0.0
-            if self.stop_loss is None:
-                self.stop_loss = 0.0
+            if self.take_profit_price is None:
+                self.take_profit_price = 0.0
+            if self.stop_loss_price is None:
+                self.stop_loss_price = 0.0
             # 持有信号时数量必须为0
             if self.quantity != 0:
                 self.quantity = 0.0
@@ -81,19 +79,19 @@ class TradingDecision(BaseModel):
             # 开仓信号的验证（仅对开仓强制要求有效止盈止损）
             if self.signal in ['buy_to_enter', 'sell_to_enter']:
                 # 价格必须大于 0
-                if self.profit_target <= 0:
-                    raise ValueError(f"开仓信号时止盈价格必须大于0，当前值: {self.profit_target}")
-                if self.stop_loss <= 0:
-                    raise ValueError(f"开仓信号时止损价格必须大于0，当前值: {self.stop_loss}")
+                if self.take_profit_price <= 0:
+                    raise ValueError(f"开仓信号时止盈价格必须大于0，当前值: {self.take_profit_price}")
+                if self.stop_loss_price <= 0:
+                    raise ValueError(f"开仓信号时止损价格必须大于0，当前值: {self.stop_loss_price}")
                 # 开仓信号时数量必须大于0
                 if self.quantity <= 0:
                     raise ValueError(f"开仓信号时数量必须大于0，当前值: {self.quantity}")
             elif self.signal == 'close':
                 # 平仓信号不强制要求止盈/止损；将缺省值归零，防止上游校验错误
-                if self.profit_target is None:
-                    self.profit_target = 0.0
-                if self.stop_loss is None:
-                    self.stop_loss = 0.0
+                if self.take_profit_price is None:
+                    self.take_profit_price = 0.0
+                if self.stop_loss_price is None:
+                    self.stop_loss_price = 0.0
         
         return self
 
@@ -105,8 +103,8 @@ class TradingDecision(BaseModel):
                 "coin": "BTC",
                 "quantity": 0.1,
                 "leverage": 5,
-                "profit_target": 105000.0,
-                "stop_loss": 95000.0,
+                "take_profit_price": 105000.0,
+                "stop_loss_price": 95000.0,
                 "invalidation_condition": "BTC breaks below $95,000 support",
                 "confidence": 0.75,
                 "risk_usd": 500.0,
@@ -122,8 +120,8 @@ class HoldDecision(BaseModel):
     coin: str = Field(default="")
     quantity: float = Field(default=0.0)
     leverage: int = Field(default=1)
-    profit_target: float = Field(default=0.0)
-    stop_loss: float = Field(default=0.0)
+    take_profit_price: float = Field(default=0.0)
+    stop_loss_price: float = Field(default=0.0)
     invalidation_condition: str = Field(default="N/A")
     confidence: float = Field(default=0.0)
     risk_usd: float = Field(default=0.0)

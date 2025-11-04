@@ -6,11 +6,13 @@ import os
 from typing import List, Literal
 from dotenv import load_dotenv
 
+from Money_Agent.tools.exchange_data_tool import get_exchange
+
 # 加载环境变量
 load_dotenv()
 
 # 支持的所有币种（用于验证）
-ALL_SUPPORTED_COINS = ["BTC", "ETH", "SOL", "BGB", "DOGE", "SUI", "LTC"]
+ALL_SUPPORTED_COINS = ["BTC", "ETH", "SOL", "BNB", "BGB", "DOGE", "SUI", "LTC"]
 
 # ==================== 资金限制配置 ====================
 # 当账户权益低于此阈值时，只交易 DOGE
@@ -19,6 +21,11 @@ MIN_EQUITY_FOR_MULTI_ASSET = float(os.getenv('MIN_EQUITY_FOR_MULTI_ASSET', '30')
 # 低资金模式下允许交易的币种（默认只有 DOGE）
 LOW_EQUITY_COINS = os.getenv('LOW_EQUITY_COINS', 'DOGE').split(',')
 LOW_EQUITY_COINS = [coin.strip().upper() for coin in LOW_EQUITY_COINS if coin.strip()]
+
+
+# 初始化交易所
+exchange = get_exchange()
+
 
 def get_trading_coins() -> List[str]:
     """
@@ -49,7 +56,7 @@ def get_coin_literal_type():
     """
     # 返回所有支持的币种，而不仅仅是当前交易的币种
     # 这样可以保证 Pydantic 验证的灵活性
-    return Literal["BTC", "ETH", "SOL", "BGB", "DOGE", "SUI", "LTC"]
+    return Literal["BTC", "ETH", "SOL", "BNB", "BGB", "DOGE", "SUI", "LTC"]
 
 # 导出常量
 TRADING_COINS = get_trading_coins()

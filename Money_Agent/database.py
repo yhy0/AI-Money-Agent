@@ -6,7 +6,6 @@ SQLite 数据库模块
 
 import sqlite3
 import json
-from datetime import datetime
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from common.log_handler import logger
@@ -82,9 +81,24 @@ class AgentDatabase:
                 notional REAL DEFAULT 0,
                 exit_plan TEXT,
                 confidence REAL DEFAULT 0,
-                risk_usd REAL DEFAULT 0
+                risk_usd REAL DEFAULT 0,
+                stop_loss_price REAL DEFAULT 0,
+                take_profit_price REAL DEFAULT 0
             )
         """)
+        
+        # 🔥 如果表已存在，尝试添加止盈止损字段
+        try:
+            cursor.execute("ALTER TABLE position_history ADD COLUMN stop_loss_price REAL DEFAULT 0")
+            logger.info("✅ 已添加 stop_loss_price 字段到 position_history 表")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在，忽略错误
+        
+        try:
+            cursor.execute("ALTER TABLE position_history ADD COLUMN take_profit_price REAL DEFAULT 0")
+            logger.info("✅ 已添加 take_profit_price 字段到 position_history 表")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在，忽略错误
         
         # 3. 交易历史表
         cursor.execute("""
@@ -97,8 +111,8 @@ class AgentDatabase:
                 side TEXT,
                 quantity REAL,
                 entry_price REAL,
-                profit_target REAL,
-                stop_loss REAL,
+                take_profit_price REAL,
+                stop_loss_price REAL,
                 leverage INTEGER DEFAULT 1,
                 confidence REAL DEFAULT 0,
                 risk_usd REAL DEFAULT 0,
@@ -232,12 +246,16 @@ class AgentDatabase:
             if unrealized_pnl is None:
                 unrealized_pnl = pos.get('unrealized_pnl', 0)
             
+            # 🔥 获取止盈止损价格
+            stop_loss_price = pos.get('stop_loss_price', 0)
+            take_profit_price = pos.get('take_profit_price', 0)
+            
             cursor.execute("""
                 INSERT INTO position_history (
                     symbol, side, contracts, leverage, entry_price, mark_price,
                     liquidation_price, unrealized_pnl, percentage, notional,
-                    exit_plan, confidence, risk_usd
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    exit_plan, confidence, risk_usd, stop_loss_price, take_profit_price
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 pos.get('symbol', ''),
                 pos.get('side', ''),
@@ -251,7 +269,9 @@ class AgentDatabase:
                 pos.get('notional', 0),
                 json.dumps(pos.get('exit_plan', {})),
                 pos.get('confidence', 0),
-                pos.get('risk_usd', 0)
+                pos.get('risk_usd', 0),
+                stop_loss_price,
+                take_profit_price
             ))
         
         conn.commit()
@@ -269,7 +289,7 @@ class AgentDatabase:
         cursor.execute("""
             INSERT INTO trade_history (
                 cycle, coin, signal, side, quantity, entry_price,
-                profit_target, stop_loss, leverage, confidence, risk_usd,
+                take_profit_price, stop_loss_price, leverage, confidence, risk_usd,
                 reasoning, invalidation_condition, execution_status, execution_message
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
@@ -279,8 +299,8 @@ class AgentDatabase:
             decision.get('side', ''),
             decision.get('quantity', 0),
             decision.get('entry_price', 0),
-            decision.get('profit_target', 0),
-            decision.get('stop_loss', 0),
+            decision.get('take_profit_price', 0),
+            decision.get('stop_loss_price', 0),
             decision.get('leverage', 1),
             decision.get('confidence', 0),
             decision.get('risk_usd', 0),

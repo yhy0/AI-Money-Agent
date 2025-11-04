@@ -4,7 +4,6 @@ Prompt 格式化工具
 """
 
 import pandas as pd
-import json
 from typing import Dict, Any, List
 
 
@@ -271,8 +270,8 @@ def format_positions(positions: List[Dict[str, Any]], trade_history: List[Dict[s
                 coin = decision.get('coin')
                 if coin and coin not in exit_plans:
                     exit_plans[coin] = {
-                        'profit_target': decision.get('profit_target', 0),
-                        'stop_loss': decision.get('stop_loss', 0),
+                        'take_profit_price': decision.get('take_profit_price', 0),
+                        'stop_loss_price': decision.get('stop_loss_price', 0),
                         'invalidation_condition': decision.get('invalidation_condition', 'N/A'),
                         'confidence': decision.get('confidence', 0),
                         'risk_usd': decision.get('risk_usd', 0)
@@ -291,27 +290,42 @@ def format_positions(positions: List[Dict[str, Any]], trade_history: List[Dict[s
         current_price = pos.get('mark_price', 0)
         liquidation_price = pos.get('liquidation_price', 0)
         
+        # 🔥 获取交易所实际设置的止盈止损（优先级最高）
+        stop_loss_price = pos.get('stop_loss_price', 0)
+        take_profit_price = pos.get('take_profit_price', 0)
+        
+        # ✅ 计算实际风险（基于交易所设置的止损）
+        quantity = pos.get('size', 0)
+        risk_usd = abs(entry_price - stop_loss_price) * quantity if stop_loss_price > 0 else 0
+        
         output += f"    'symbol': '{symbol}',\n"
         output += f"    'side': '{pos.get('side', 'N/A')}',\n"
-        output += f"    'quantity': {pos.get('size', 0)},\n"
+        output += f"    'quantity': {quantity},\n"
         output += f"    'entry_price': {entry_price:.6f},\n"
         output += f"    'current_price': {current_price:.6f},\n"
         output += f"    'liquidation_price': {liquidation_price:.6f},\n"
         output += f"    'unrealized_pnl': {pos.get('unrealized_pnl', 0):.6f},\n"
         output += f"    'leverage': {pos.get('leverage', 1)},\n"
         
+        # 🔥 显示交易所实际的止盈止损（如果有）
+        if stop_loss_price > 0 or take_profit_price > 0:
+            output += "    'exchange_sl_tp': {\\n"
+            output += f"      'stop_loss_price': {stop_loss_price:.6f},  # 交易所实际设置\\n"
+            output += f"      'take_profit': {take_profit_price:.6f}  # 交易所实际设置\\n"
+            output += "    },\\n"
+        
         # 添加 exit_plan（从交易历史恢复或使用默认值）
         exit_plan = exit_plans.get(coin, {
-            'profit_target': 0,
-            'stop_loss': 0,
+            'take_profit_price': take_profit_price if take_profit_price > 0 else 0,
+            'stop_loss_price': stop_loss_price if stop_loss_price > 0 else 0,
             'invalidation_condition': '未设置',
             'confidence': 0,
-            'risk_usd': 0
+            'risk_usd': risk_usd
         })
         
         output += "    'exit_plan': {\n"
-        output += f"      'profit_target': {exit_plan['profit_target']:.6f},\n"
-        output += f"      'stop_loss': {exit_plan['stop_loss']:.6f},\n"
+        output += f"      'take_profit_price': {exit_plan['take_profit_price']:.6f},\n"
+        output += f"      'stop_loss_price': {exit_plan['stop_loss_price']:.6f},\n"
         output += f"      'invalidation_condition': '{exit_plan['invalidation_condition']}'\n"
         output += "    },\n"
         output += f"    'confidence': {exit_plan['confidence']:.6f},\n"

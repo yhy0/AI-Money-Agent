@@ -7,7 +7,7 @@ AI Money Agent - Web Dashboard Server
 import asyncio
 import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -144,7 +144,7 @@ async def get_trades(limit: int = 50):
 
 
 @app.get("/api/decisions")
-async def get_decisions(limit: int = 50):
+async def get_agent_decisions(limit: int = 50):
     """获取最近的决策记录"""
     try:
         decisions = db.get_recent_decisions(limit=limit)

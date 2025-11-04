@@ -6,8 +6,6 @@ import numpy as np
 import os
 import time
 from typing import Dict, Any, List, Optional
-from functools import lru_cache
-from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from common.log_handler import logger, log_tool_event, log_system_event
 from Money_Agent.config import TRADING_COINS
@@ -178,20 +176,20 @@ def _fetch_coin_data(exchange, coin: str) -> Dict[str, Any]:
         }
 
 
-def get_market_data(exchange, coins=None, max_workers=7):
+def get_market_data(exchange, coins=None, max_workers=8):
     """获取并格式化市场数据。
     
     Args:
         exchange: 交易所实例
         coins: 币种列表（默认从环境变量 TRADING_COINS 读取）
-        max_workers: 最大并发线程数 7 
+        max_workers: 最大并发线程数 8 
     
     Returns:
         格式化的市场数据字符串
     """
     if coins is None:
         coins = TRADING_COINS
-    from Money_Agent.prompt_formatter import format_coin_data
+    from Money_Agent.utils.prompt_formatter import format_coin_data
     
     market_data_str = ""
     prices_summary = {}
@@ -275,15 +273,55 @@ def get_account_balance(exchange) -> Dict[str, Any]:
         }
 
 def get_positions(exchange) -> List[Dict[str, Any]]:
-    """获取当前持仓（包含杠杆和强平价）"""
+    """获取当前持仓（包含杠杆、强平价、止盈止损）"""
     try:
         # 如果有API密钥，尝试获取真实持仓
         if hasattr(exchange, 'apiKey') and exchange.apiKey:
             positions = exchange.fetch_positions()
             active_positions = []
-            
+
+            # 🔥 获取所有未成交订单（用于查找止盈止损订单）
+            open_orders = {}
+            try:
+                all_orders = exchange.fetch_open_orders()
+                # 按 symbol 分组
+                for order in all_orders:
+                    symbol = order['symbol']
+                    if symbol not in open_orders:
+                        open_orders[symbol] = []
+                    open_orders[symbol].append(order)
+            except Exception as e:
+                logger.warning(f"获取未成交订单失败: {e}")
+
             for position in positions:
+          
                 if position['contracts'] > 0:  # 有持仓
+                    symbol = position['symbol']
+                    
+                    # 🔥 尝试从 position 对象中获取止盈止损
+                    stop_loss_price = float(position.get('stopLoss', 0) or 0)
+                    take_profit_price = float(position.get('takeProfit', 0) or 0)
+
+                    # 🔥 如果 position 中没有，尝试从未成交订单中查找
+                    if stop_loss_price == 0 or take_profit_price == 0:
+                        if symbol in open_orders:
+                            for order in open_orders[symbol]:
+                                order_type = order.get('type', '').lower()
+                                order_info = order.get('info', {})
+                                # Bitget 的止损止盈订单类型
+                                if 'stop' in order_type or order_info.get('planType') == 'loss_plan':
+                                    if stop_loss_price == 0:
+                                        stop_loss_price = order.get('stopPrice') or order.get('triggerPrice') or 0
+                                
+                                if 'take_profit' in order_type or order_info.get('planType') == 'profit_plan':
+                                    if take_profit_price == 0:
+                                        take_profit_price = order.get('stopPrice') or order.get('triggerPrice') or 0
+                        else: # 止盈止损的价格获取有点问题，bitget 使用 cctx 这个库，映射时是在 info 中的
+                            # 🔥 正确的获取方式：从 info 字段获取
+                            info = position.get('info', {})
+                            stop_loss_price = float(info.get('stopLoss', 0) or 0)
+                            take_profit_price = float(info.get('takeProfit', 0) or 0)
+
                     active_positions.append({
                         'symbol': position['symbol'],
                         'side': position['side'],
@@ -296,9 +334,12 @@ def get_positions(exchange) -> List[Dict[str, Any]]:
                         'leverage': position.get('leverage', 1),
                         'liquidation_price': position.get('liquidationPrice', 0),
                         'notional': position.get('notional', 0),  # 名义价值
+                        # 🔥 新增：止盈止损价格
+                        'stop_loss_price': stop_loss_price,
+                        'take_profit_price': take_profit_price,
                     })
             
-            # 🔥 记录持仓信息
+            # 🔥 记录持仓信息（包含止盈止损）
             if active_positions:
                 positions_summary = []
                 for pos in active_positions:
@@ -306,13 +347,20 @@ def get_positions(exchange) -> List[Dict[str, Any]]:
                     entry_p = pos['entry_price']
                     mark_p = pos['mark_price']
                     liq_p = pos['liquidation_price']
+                    sl_p = pos['stop_loss_price']
+                    tp_p = pos['take_profit_price']
                     
                     def fmt_p(p):
-                        if p >= 1000: return f"${p:.6f}"
-                        elif p >= 1: return f"${p:.6f}"
-                        else: return f"${p:.8f}"
+                        if p == 0:
+                            return "未设置"
+                        elif p >= 1000:
+                            return f"${p:.6f}"
+                        elif p >= 1:
+                            return f"${p:.6f}"
+                        else:
+                            return f"${p:.8f}"
                     
-                    positions_summary.append({
+                    summary = {
                         "币种": pos['symbol'],
                         "方向": pos['side'],
                         "数量": pos['size'],
@@ -320,8 +368,13 @@ def get_positions(exchange) -> List[Dict[str, Any]]:
                         "入场价": fmt_p(entry_p),
                         "当前价": fmt_p(mark_p),
                         "强平价": fmt_p(liq_p),
-                        "未实现盈亏": f"${pos['unrealized_pnl']:.6f}"
-                    })
+                        "未实现盈亏": f"${pos['unrealized_pnl']:.6f}",
+                        "回报率": f"{pos['percentage']:+.2f}%",
+                        "止损价": fmt_p(sl_p),
+                        "止盈价": fmt_p(tp_p),
+                    }
+                    positions_summary.append(summary)
+                
                 log_tool_event("获取持仓信息", positions_summary)
             else:
                 log_tool_event("获取持仓信息", "当前无持仓")
@@ -644,8 +697,8 @@ def execute_trade_order(exchange, decision: Dict[str, Any], dry_run: bool = Fals
         result = {'success': False, 'order_id': None, 'error': None, 'simulated': False}
         
         # 🔥 强制检查止损止盈（开仓必须设置止损止盈）
-        stop_loss_price = decision.get('stop_loss', 0)
-        take_profit_price = decision.get('profit_target', 0)
+        stop_loss_price = decision.get('stop_loss_price', 0)
+        take_profit_price = decision.get('take_profit_price', 0)
         
         # 只对开仓信号进行检查
         if signal in ['buy_to_enter', 'sell_to_enter']:
@@ -867,7 +920,7 @@ def execute_trade_order(exchange, decision: Dict[str, Any], dry_run: bool = Fals
 def set_stop_loss_take_profit(
     exchange,
     symbol: str,
-    stop_loss: Optional[float],
+    stop_loss_price: Optional[float],
     take_profit: Optional[float],
     side: str,
     position_size: Optional[float] = None,
@@ -881,7 +934,7 @@ def set_stop_loss_take_profit(
     Args:
         exchange: 已初始化的 ccxt.bitget 实例
         symbol: 交易对 (如 "BTC/USDT:USDT")
-        stop_loss: 止损触发价格 (None 表示不设置)
+        stop_loss_price: 止损触发价格 (None 表示不设置)
         take_profit: 止盈触发价格 (None 表示不设置)
         side: 持仓方向 ("long" 表示多头, "short" 表示空头)
         position_size: 指定保护的仓位大小 (合约数量). 缺省将自动读取当前仓位
@@ -895,11 +948,11 @@ def set_stop_loss_take_profit(
     """
     params = params.copy() if params else {}
 
-    if stop_loss is None and take_profit is None:
+    if stop_loss_price is None and take_profit is None:
         logger.warning("⚠️ 未提供止损或止盈价格, 跳过设置")
         return {
             "success": False,
-            "error": "Both stop_loss and take_profit are None",
+            "error": "Both stop_loss_price and take_profit are None",
             "simulated": dry_run,
             "order": None,
         }
@@ -907,7 +960,7 @@ def set_stop_loss_take_profit(
     # 🔥 模拟运行模式：不设置实际止损止盈
     if dry_run:
         logger.info(
-            f"🎭 [模拟模式] 设置止损止盈: {symbol} side={side} SL={stop_loss} TP={take_profit}"
+            f"🎭 [模拟模式] 设置止损止盈: {symbol} side={side} SL={stop_loss_price} TP={take_profit}"
         )
         return {
             "success": True,
@@ -917,7 +970,7 @@ def set_stop_loss_take_profit(
 
     if not (hasattr(exchange, "apiKey") and exchange.apiKey):
         logger.info(
-            f"🎭 模拟设置止损止盈: {symbol} side={side} SL={stop_loss} TP={take_profit} (未配置API密钥)"
+            f"🎭 模拟设置止损止盈: {symbol} side={side} SL={stop_loss_price} TP={take_profit} (未配置API密钥)"
         )
         return {
             "success": True,
@@ -961,7 +1014,7 @@ def set_stop_loss_take_profit(
         responses = []
         
         # 设置止损订单
-        if stop_loss:
+        if stop_loss_price:
             try:
                 sl_params = params.copy()
                 sl_params["reduceOnly"] = True
@@ -971,7 +1024,7 @@ def set_stop_loss_take_profit(
                     symbol,
                     order_side_close,
                     quantity,
-                    stop_loss,
+                    stop_loss_price,
                 )
                 
                 sl_response = exchange.create_stop_loss_order(
@@ -980,10 +1033,10 @@ def set_stop_loss_take_profit(
                     side=order_side_close,
                     amount=quantity,
                     price=None,  # 市价单不需要价格
-                    stopLossPrice=stop_loss,
+                    stopLossPrice=stop_loss_price,
                     params=sl_params,
                 )
-                responses.append(("stop_loss", sl_response))
+                responses.append(("stop_loss_price", sl_response))
                 logger.info("✅ 止损设置成功")
                 
             except Exception as e:
@@ -1020,7 +1073,7 @@ def set_stop_loss_take_profit(
                 logger.error(f"❌ 止盈设置失败: {str(e)}")
                 raise
         
-        response = {"stop_loss": None, "take_profit": None}
+        response = {"stop_loss_price": None, "take_profit": None}
         for order_type, order_response in responses:
             response[order_type] = order_response
         

@@ -1,12 +1,10 @@
 import os
-from typing import Union, Optional
 from langchain_deepseek import ChatDeepSeek
 from langchain_openai import ChatOpenAI
-from langfuse.langchain import CallbackHandler
 from common.log_handler import logger
-from .schemas import TradingDecision, HoldDecision
+from .schemas import TradingDecision
 
-DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.lkeap.cloud.tencent.com/v1")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 def create_model(
@@ -46,7 +44,6 @@ def create_model(
     logger.info(f"✅ 创建Apt-Agents 模型实例: {model_name} (temperature={temperature})")
 
     return model
-
 
 
 def create_structured_model(
