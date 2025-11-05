@@ -55,7 +55,7 @@ class TradingDecision(BaseModel):
     )
     
     justification: str = Field(
-        max_length=500,
+        max_length=800,
         description="交易决策的详细理由"
     )
 

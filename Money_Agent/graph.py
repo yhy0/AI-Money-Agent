@@ -139,7 +139,7 @@ def get_agent_decision(state: AgentState):
             market_regime=market_regime  # 注入市场状态
         )
         
-        # 🔥 记录 LLM 输入（简化版，避免过长）
+        # 🔥 记录 LLM 输入
         log_agent_thought("准备调用 LLM 获取交易决策", {
             "时间点": f"{state['minutes_elapsed']} 分钟",
             "可用资金": f"${account_info.get('cash_available', 0):.6f}",
@@ -173,60 +173,7 @@ def get_agent_decision(state: AgentState):
             "止损": f"${decision.stop_loss_price:.6f}",
             "理由": decision.justification
         })
-        
-        # ==================== 🔥 趋势一致性验证 ====================
-        if decision.signal in ['buy_to_enter', 'sell_to_enter']:
-            validation_result = validate_trend_consistency(
-                decision.dict(),
-                state["structured_market_data"],
-                state.get("trade_history", [])
-            )
-            
-            # 记录趋势一致性检查结果
-            trend_info = validation_result.get('trend_info', {})
-            if trend_info:
-                log_state_update("📊 趋势一致性检查", {
-                    "币种": decision.coin,
-                    "4h趋势": trend_info.get('4h_trend', 'N/A'),
-                    "EMA20(4h)": f"${trend_info.get('ema20_4h', 0):.6f}",
-                    "EMA50(4h)": f"${trend_info.get('ema50_4h', 0):.6f}",
-                    "MACD(4h)": f"{trend_info.get('macd_4h', 0):.6f}",
-                    "交易信号": decision.signal,
-                    "信念度": f"{decision.confidence:.1%}",
-                    "验证结果": "✅ 通过" if validation_result['valid'] else "❌ 未通过"
-                })
-            
-            # 如果有警告，记录到安全事件日志
-            if validation_result['warnings']:
-                for warning in validation_result['warnings']:
-                    log_security_event(warning, {
-                        "币种": decision.coin,
-                        "信号": decision.signal,
-                        "信念度": f"{decision.confidence:.1%}",
-                        "4h趋势": trend_info.get('4h_trend', 'N/A')
-                    })
-            
-            # 如果验证未通过，强制改为 hold
-            if not validation_result['valid']:
-                original_signal = decision.signal
-                original_coin = decision.coin
-                
-                log_security_event("🚫 趋势一致性规则违反，交易被拒绝", {
-                    "原始信号": original_signal,
-                    "目标币种": original_coin,
-                    "拒绝原因": "; ".join(validation_result['warnings']),
-                    "处理方式": "强制改为 hold 信号"
-                })
-                
-                # 修改决策为 hold
-                decision.signal = "hold"
-                decision.coin = ""
-                decision.quantity = 0.0
-                decision.leverage = 1
-                decision.take_profit_price = 0.0
-                decision.stop_loss_price = 0.0
-                decision.justification = f"[趋势规则限制] {'; '.join(validation_result['warnings'])}。原计划: {original_signal} {original_coin}。{decision.justification}"
-        
+
         # ==================== 🔥 交易限制检查 ====================
         # 只限制新开仓信号（buy_to_enter, sell_to_enter），允许平仓（close）和持有（hold）
         # 注意：active_trading_coins 已在前面确保设置
