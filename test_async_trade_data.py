@@ -11,7 +11,8 @@ import json
 from dotenv import load_dotenv
 from Money_Agent.tools.exchange_data_tool import get_exchange, validate_api_credentials
 from Money_Agent.tools.trade_history_analyzer import generate_user_report, generate_llm_data
-from common.log_handler import logger
+from common.log_handler import logger, log_system_event, log_state_update
+
 
 # 加载环境变量
 load_dotenv()
@@ -41,9 +42,6 @@ async def main():
     # 1. 生成并展示为用户准备的 Markdown 报告
     logger.info("\n📥 正在生成用户交易分析报告...")
     markdown_report = await generate_user_report(exchange)
-    
-    print_separator("🤖 交易分析报告 (Markdown)", "-")
-    print(markdown_report)
 
     # 2. 生成并展示为 LLM 准备的 JSON 数据
     logger.info("\n📥 正在生成LLM结构化数据...")

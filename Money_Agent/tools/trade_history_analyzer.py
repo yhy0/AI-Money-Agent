@@ -10,7 +10,9 @@ import asyncio
 from typing import List, Dict, Any, Tuple
 from common.log_handler import logger
 from datetime import datetime, timezone, timedelta
-from .exchange_order_tool import get_positions_history
+from Money_Agent.tools.exchange_order_tool import get_positions_history
+from common.log_handler import logger, log_system_event
+
 
 # --- 私有辅助函数 ---
 
@@ -59,8 +61,8 @@ def _calculate_statistics(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     profits = [t['net_profit_usd'] for t in trades]
     profitable_trades = [t for t in trades if t['net_profit_usd'] > 0]
     losing_trades = [t for t in trades if t['net_profit_usd'] < 0]
-    long_trades = [t for t in trades if t['position_type'] == '开多']
-    short_trades = [t for t in trades if t['position_type'] == '开空']
+    long_trades = [t for t in trades if '开多' in t['position_type']]
+    short_trades = [t for t in trades if '开空' in t['position_type']]
     return {
         'total': {'count': total_trades, 'profit': round(sum(profits), 2), 'win_rate': (len(profitable_trades) / total_trades * 100) if total_trades > 0 else 0},
         'profitable': {'count': len(profitable_trades), 'avg_profit': round(sum(p['net_profit_usd'] for p in profitable_trades) / len(profitable_trades), 2) if profitable_trades else 0},
@@ -85,7 +87,7 @@ def _format_to_markdown(clean_trades: List[Dict[str, Any]], statistics: Dict[str
     md += f"- **开空**: {statistics['short']['count']}笔, 盈亏: ${statistics['short']['profit']:+.2f}, 胜率: {statistics['short']['win_rate']:.1f}%\n\n"
     md += "#### 最近仓位记录\n"
     md += "| 币种 | 类型 | 开仓均价 | 平仓均价 | 净盈亏 (USD) | 盈亏率 | 平仓时间 |\n"
-    md += "|:---|:---|---:|---:|---:|---:|:---|"
+    md += "|:---|:---|---:|---:|---:|---:|:---|\n"
     for trade in clean_trades[:15]:
         emoji = "📈" if trade['net_profit_usd'] > 0 else "📉"
         md += f"| {emoji} **{trade['symbol']}** | {trade['position_type']} | " \
@@ -102,6 +104,8 @@ async def _get_and_process_data(exchange) -> Tuple[List[Dict[str, Any]], Dict[st
     clean_trades = _process_positions_data(raw_positions)
     statistics = _calculate_statistics(clean_trades)
     logger.info(f"✅ 已获取并处理 {len(clean_trades)} 条历史仓位数据")
+    markdown_report = _format_to_markdown(clean_trades, statistics)
+    log_system_event("🤖 交易分析报告 (Markdown)", markdown_report)
     return clean_trades, statistics
 
 # --- 公开接口 ---

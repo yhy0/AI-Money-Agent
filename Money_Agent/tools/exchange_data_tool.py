@@ -2,6 +2,7 @@
 import ccxt
 import pandas as pd
 import vectorbt as vbt
+import pandas_ta as ta
 import os
 import time
 from typing import Dict, Any, List, Optional
@@ -117,9 +118,9 @@ def _fetch_coin_data(exchange, coin: str) -> Dict[str, Any]:
         df_3m['MACDh_12_26_9'] = macd_result.hist.values  # 使用 hist 而不是 histogram
         df_3m['MACDs_12_26_9'] = macd_result.signal.values
         
-        # RSI
-        df_3m['RSI_7'] = vbt.RSI.run(df_3m['close'], window=7).rsi.values
-        df_3m['RSI_14'] = vbt.RSI.run(df_3m['close'], window=14).rsi.values
+        # RSI (使用 pandas_ta，标准 Wilder's smoothing)
+        df_3m['RSI_7'] = ta.rsi(df_3m['close'], length=7)
+        df_3m['RSI_14'] = ta.rsi(df_3m['close'], length=14)
         
         # 4小时指标
         df_4h['EMA_20_4h'] = vbt.MA.run(df_4h['close'], window=20, ewm=True).ma.values
@@ -138,8 +139,8 @@ def _fetch_coin_data(exchange, coin: str) -> Dict[str, Any]:
         df_4h['MACDh_4h'] = macd_4h.hist.values  # 使用 hist 而不是 histogram
         df_4h['MACDs_4h'] = macd_4h.signal.values
         
-        # RSI 4h
-        df_4h['RSI_14_4h'] = vbt.RSI.run(df_4h['close'], window=14).rsi.values
+        # RSI 4h (使用 pandas_ta，标准 Wilder's smoothing)
+        df_4h['RSI_14_4h'] = ta.rsi(df_4h['close'], length=14)
 
         return {
             'success': True,
@@ -284,29 +285,11 @@ def get_positions(exchange) -> List[Dict[str, Any]]:
                 if position['contracts'] > 0:  # 有持仓
                     symbol = position['symbol']
                     
-                    # 🔥 尝试从 position 对象中获取止盈止损
-                    stop_loss_price = float(position.get('stopLoss', 0) or 0)
-                    take_profit_price = float(position.get('takeProfit', 0) or 0)
-
-                    # 🔥 如果 position 中没有，尝试从未成交订单中查找
-                    if stop_loss_price == 0 or take_profit_price == 0:
-                        if symbol in open_orders:
-                            for order in open_orders[symbol]:
-                                order_type = order.get('type', '').lower()
-                                order_info = order.get('info', {})
-                                # Bitget 的止损止盈订单类型
-                                if 'stop' in order_type or order_info.get('planType') == 'loss_plan':
-                                    if stop_loss_price == 0:
-                                        stop_loss_price = order.get('stopPrice') or order.get('triggerPrice') or 0
-                                
-                                if 'take_profit' in order_type or order_info.get('planType') == 'profit_plan':
-                                    if take_profit_price == 0:
-                                        take_profit_price = order.get('stopPrice') or order.get('triggerPrice') or 0
-                        else: # 止盈止损的价格获取有点问题，bitget 使用 cctx 这个库，映射时是在 info 中的
-                            # 🔥 正确的获取方式：从 info 字段获取
-                            info = position.get('info', {})
-                            stop_loss_price = float(info.get('stopLoss', 0) or 0)
-                            take_profit_price = float(info.get('takeProfit', 0) or 0)
+                    # 🔥 正确的获取方式：从 info 字段获取
+                    # bitget 使用 cctx 这个库，映射时是在 info 中的
+                    info = position.get('info', {})
+                    stop_loss_price = float(info.get('stopLoss', 0) or 0)
+                    take_profit_price = float(info.get('takeProfit', 0) or 0)
 
                     active_positions.append({
                         'symbol': position['symbol'],

@@ -10,7 +10,7 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 def get_positions_history(exchange, day_offset: int = 1, limit: int = 100) -> List[Dict[str, Any]]:
-    """获取历史仓位记录 (已关闭的完整仓位)
+    """获取历史仓位记录
 
     通过一次API调用获取所有币种的仓位历史，然后返回。
 
@@ -33,17 +33,16 @@ def get_positions_history(exchange, day_offset: int = 1, limit: int = 100) -> Li
 
         # --- 时间范围计算 (北京时间) ---
         tz_beijing = ZoneInfo("Asia/Shanghai")
-        today_bjt = datetime.now(tz_beijing).date()
-        target_day_bjt = today_bjt - timedelta(days=day_offset)
-
-        start_dt_bjt = datetime.combine(target_day_bjt, time.min, tzinfo=tz_beijing)
-        end_dt_bjt = datetime.combine(target_day_bjt, time.max, tzinfo=tz_beijing)
-
+        now_bjt = datetime.now(tz_beijing)
+        
+        # 从当前时间往前推 N*24 小时
+        start_dt_bjt = now_bjt - timedelta(days=day_offset)
+        
         since_ms = int(start_dt_bjt.timestamp() * 1000)
-        params = {'endTime': int(end_dt_bjt.timestamp() * 1000)}
-        
-        logger.info(f"📥 正在获取所有交易对的历史仓位...")
-        
+        params = {'endTime': int(now_bjt.timestamp() * 1000)}
+
+        logger.info(f"📥 正在获取所有交易对的历史仓位 {since_ms} --- {params['endTime']}...")
+
         # 不提供 symbol 参数，一次性获取所有币种的历史仓位
         all_positions = exchange.fetch_positions_history(since=since_ms, limit=limit, params=params)
         
